@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.company.gudang",
-      "versionCode": 1.0 ,
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
@@ -23,6 +23,12 @@
     ],
     "ios": {
       "bundleIdentifier": "com.company.gudang"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "46c1bd3c-267c-4981-889c-70f16ef149d6"
+      }
+    },
+    "owner": "bie7"
   }
 }
