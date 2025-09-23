@@ -90,6 +90,72 @@ function buildPOFileBase(order) {
 
 const DOWNLOAD_PREF_FILE = `${FileSystem.documentDirectory}po_download_dir.json`;
 
+function describeSafDirectory(directoryUri) {
+  if (!directoryUri) return null;
+  try {
+    let descriptor = directoryUri;
+    const treeMarker = '/tree/';
+    const treeIndex = descriptor.indexOf(treeMarker);
+    if (treeIndex >= 0) {
+      descriptor = descriptor.substring(treeIndex + treeMarker.length);
+    }
+    const documentMarker = '/document/';
+    const documentIndex = descriptor.indexOf(documentMarker);
+    if (documentIndex >= 0) {
+      descriptor = descriptor.substring(0, documentIndex);
+    }
+    let decoded = decodeURIComponent(descriptor);
+    if (!decoded) return null;
+    if (decoded.startsWith('primary:')) {
+      const relative = decoded.substring('primary:'.length).replace(/:/g, '/');
+      return relative ? `Penyimpanan internal/${relative}` : 'Penyimpanan internal';
+    }
+    if (decoded.startsWith('home:')) {
+      const relative = decoded.substring('home:'.length).replace(/:/g, '/');
+      return relative ? `Folder beranda/${relative}` : 'Folder beranda';
+    }
+    if (decoded.includes(':')) {
+      const [volume, ...restParts] = decoded.split(':');
+      const rest = restParts.join(':').replace(/:/g, '/');
+      return rest ? `${volume}/${rest}` : volume;
+    }
+    return decoded.replace(/:/g, '/');
+  } catch (error) {
+    console.log('DESCRIBE DIRECTORY ERROR:', error);
+    return null;
+  }
+}
+
+function buildExternalDisplayPath(directoryUri, fileName) {
+  const baseLabel = describeSafDirectory(directoryUri);
+  const sanitizedName = (fileName || '').replace(/^\/+/, '');
+  const trimmedBase = baseLabel ? baseLabel.replace(/\/+$/, '') : null;
+  if (trimmedBase) {
+    const path = sanitizedName ? `${trimmedBase}/${sanitizedName}` : trimmedBase;
+    return `Folder yang kamu pilih: ${path}`;
+  }
+  if (directoryUri) {
+    const trimmedUri = directoryUri.replace(/\/+$/, '');
+    const path = sanitizedName ? `${trimmedUri}/${sanitizedName}` : trimmedUri;
+    return `Folder yang kamu pilih: ${path}`;
+  }
+  return null;
+}
+
+function buildInternalDisplayPath(fileName, destPath) {
+  const sanitizedName = (fileName || '').replace(/^\/+/, '');
+  if (FileSystem.documentDirectory) {
+    const normalizedDir = FileSystem.documentDirectory.endsWith('/')
+      ? FileSystem.documentDirectory
+      : `${FileSystem.documentDirectory}/`;
+    return `Folder aplikasi internal: ${normalizedDir}${sanitizedName}`;
+  }
+  if (destPath) {
+    return `Folder aplikasi internal: ${destPath}`;
+  }
+  return 'Folder aplikasi internal';
+}
+
 async function getSavedDownloadDir() {
   try {
     const content = await FileSystem.readAsStringAsync(DOWNLOAD_PREF_FILE);
@@ -127,7 +193,10 @@ async function saveFileToStorage(tempUri, fileName, mimeType) {
       }
     }
     await FileSystem.copyAsync({ from: tempUri, to: destPath });
-    return destPath;
+    return {
+      uri: destPath,
+      displayPath: buildInternalDisplayPath(fileName, destPath),
+    };
   };
 
   const hasSAF =
@@ -144,20 +213,22 @@ async function saveFileToStorage(tempUri, fileName, mimeType) {
           directoryUri = permissions.directoryUri;
           await setSavedDownloadDir(directoryUri);
         } else {
-          const fallbackUri = await copyToDocumentDirectory();
+          const fallback = await copyToDocumentDirectory();
           return {
-            uri: fallbackUri,
+            uri: fallback.uri,
             location: 'internal',
             notice: 'Perangkat tidak mengizinkan memilih folder penyimpanan eksternal.',
+            displayPath: fallback.displayPath,
           };
         }
       } catch (permissionError) {
         console.log('SAF PERMISSION ERROR:', permissionError);
-        const fallbackUri = await copyToDocumentDirectory();
+        const fallback = await copyToDocumentDirectory();
         return {
-          uri: fallbackUri,
+          uri: fallback.uri,
           location: 'internal',
           notice: 'Gagal membuka pemilih folder. File disimpan di folder aplikasi.',
+          displayPath: fallback.displayPath,
         };
       }
     }
@@ -169,33 +240,45 @@ async function saveFileToStorage(tempUri, fileName, mimeType) {
         await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        return { uri: destUri, location: 'external', notice: null };
+        return {
+          uri: destUri,
+          location: 'external',
+          notice: null,
+          displayPath: buildExternalDisplayPath(directoryUri, fileName),
+        };
       } catch (saveError) {
         console.log('SAF SAVE ERROR:', saveError);
         await setSavedDownloadDir(null);
-        const fallbackUri = await copyToDocumentDirectory();
+        const fallback = await copyToDocumentDirectory();
         return {
-          uri: fallbackUri,
+          uri: fallback.uri,
           location: 'internal',
           notice: 'Tidak dapat menyimpan ke folder yang dipilih. File disimpan di folder aplikasi.',
+          displayPath: fallback.displayPath,
         };
       }
     }
   }
 
   try {
-    const fallbackUri = await copyToDocumentDirectory();
+    const fallback = await copyToDocumentDirectory();
     return {
-      uri: fallbackUri,
+      uri: fallback.uri,
       location: 'internal',
       notice:
         Platform.OS === 'android' && !hasSAF
           ? 'Perangkat tidak mendukung pemilihan folder eksternal. File disimpan di folder aplikasi.'
           : null,
+      displayPath: fallback.displayPath,
     };
   } catch (error) {
     console.log('SAVE FILE ERROR:', error);
-    return { uri: tempUri, location: 'unknown', notice: 'Gagal memindahkan file ke folder aplikasi.' };
+    return {
+      uri: tempUri,
+      location: 'unknown',
+      notice: 'Gagal memindahkan file ke folder aplikasi.',
+      displayPath: tempUri ? `Lokasi sementara: ${tempUri}` : null,
+    };
   }
 }
 
@@ -1992,7 +2075,12 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
         </html>
       `;
       const { uri } = await Print.printToFileAsync({ html, base64: false, fileName: fileBaseName });
-      const { uri: savedUri, location: savedLocation, notice: savedNotice } = await saveFileToStorage(
+      const {
+        uri: savedUri,
+        location: savedLocation,
+        notice: savedNotice,
+        displayPath: savedDisplayPath,
+      } = await saveFileToStorage(
         uri,
         `${fileBaseName}.pdf`,
         'application/pdf'
@@ -2013,9 +2101,11 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
           console.log('SHARE URI NOT AVAILABLE FOR PDF');
         }
       }
-      const locationMessage = savedLocation === 'external'
-        ? 'File tersimpan di folder yang kamu pilih.'
-        : `File tersimpan di ${savedUri}`;
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === 'external'
+          ? 'File tersimpan di folder yang kamu pilih.'
+          : `File tersimpan di ${savedUri}.`;
       const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
       Alert.alert('Invoice Disimpan', alertMessage);
     } catch (error) {
@@ -2036,7 +2126,12 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
       });
       const fileBaseName = buildPOFileBase(order);
       const fileName = `${fileBaseName}.png`;
-      const { uri: savedUri, location: savedLocation, notice: savedNotice } = await saveFileToStorage(
+      const {
+        uri: savedUri,
+        location: savedLocation,
+        notice: savedNotice,
+        displayPath: savedDisplayPath,
+      } = await saveFileToStorage(
         tempUri,
         fileName,
         'image/png'
@@ -2056,9 +2151,11 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
           console.log('SHARE URI NOT AVAILABLE FOR IMAGE');
         }
       }
-      const locationMessage = savedLocation === 'external'
-        ? 'File tersimpan di folder yang kamu pilih.'
-        : `File tersimpan di ${savedUri}`;
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === 'external'
+          ? 'File tersimpan di folder yang kamu pilih.'
+          : `File tersimpan di ${savedUri}.`;
       const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
       Alert.alert('Gambar Disimpan', alertMessage);
     } catch (error) {
