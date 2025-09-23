@@ -718,27 +718,32 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 border-bottom: 1px solid #e2e8f0;
                 font-size: 15px;
                 color: #0f172a;
-                vertical-align: top;
+                vertical-align: middle;
               }
               td.item {
                 width: 100%;
               }
               td.numeric {
-                display: flex;
-                justify-content: flex-end;
-                align-items: baseline;
-                gap: 8px;
+                text-align: right;
                 white-space: nowrap;
+                font-variant-numeric: tabular-nums;
               }
               td.numeric .value {
-                font-variant-numeric: tabular-nums;
+                display: inline-block;
                 font-weight: 500;
+                vertical-align: baseline;
+              }
+              td.numeric--qty .value {
+                font-weight: 600;
               }
               td.numeric .unit {
+                display: inline-block;
+                margin-left: 6px;
                 font-size: 12px;
                 color: #94a3b8;
                 text-transform: uppercase;
                 letter-spacing: 0.08em;
+                vertical-align: baseline;
               }
               td.numeric--total .value {
                 font-weight: 600;
