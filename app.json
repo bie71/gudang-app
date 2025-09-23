@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.company.gudang",
+      "versionCode": 1.0 ,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
