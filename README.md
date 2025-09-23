@@ -58,6 +58,16 @@ CREATE TABLE IF NOT EXISTS stock_history(
 - OUT: validasi stok, insert history + `items.stock -= qty`
 - Omzet = Σ(OUT.qty × item.price)
 
+```
+# sinkron native kalau ada perubahan config
+npx expo prebuild --platform android
+
+# build AAB buat Play Store
+eas build -p android --profile production
+
+```
+
+
 ## 📦 Struktur Proyek
 ```
 app/
