@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, ScrollView, RefreshControl, Modal, Pressable, ActivityIndicator, Dimensions, Platform } from "react-native";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, ScrollView, RefreshControl, Modal, Pressable, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { openDatabaseAsync } from "expo-sqlite";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator, useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useHeaderHeight } from "@react-navigation/elements";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
@@ -90,6 +91,115 @@ function buildPOFileBase(order) {
 
 const DOWNLOAD_PREF_FILE = `${FileSystem.documentDirectory}po_download_dir.json`;
 
+const KEYBOARD_AVOIDING_BEHAVIOR =
+  Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined;
+
+function useFormKeyboardOffset(extraOffset = 0) {
+  const headerHeight = useHeaderHeight();
+  const platformOffset = Platform.OS === "android" ? 16 : 0;
+  return headerHeight + platformOffset + extraOffset;
+}
+
+function FormScrollContainer({
+  children,
+  contentContainerStyle,
+  keyboardShouldPersistTaps,
+  ...rest
+}) {
+  const keyboardOffset = useFormKeyboardOffset();
+  const baseContentStyle = {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 32,
+  };
+  const mergedContentStyle = Array.isArray(contentContainerStyle)
+    ? [baseContentStyle, ...contentContainerStyle]
+    : { ...baseContentStyle, ...(contentContainerStyle || {}) };
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={KEYBOARD_AVOIDING_BEHAVIOR}
+      keyboardVerticalOffset={keyboardOffset}
+    >
+      <ScrollView
+        {...rest}
+        keyboardShouldPersistTaps={keyboardShouldPersistTaps ?? "handled"}
+        contentContainerStyle={mergedContentStyle}
+      >
+        {children}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function describeSafDirectory(directoryUri) {
+  if (!directoryUri) return null;
+  try {
+    let descriptor = directoryUri;
+    const treeMarker = '/tree/';
+    const treeIndex = descriptor.indexOf(treeMarker);
+    if (treeIndex >= 0) {
+      descriptor = descriptor.substring(treeIndex + treeMarker.length);
+    }
+    const documentMarker = '/document/';
+    const documentIndex = descriptor.indexOf(documentMarker);
+    if (documentIndex >= 0) {
+      descriptor = descriptor.substring(0, documentIndex);
+    }
+    let decoded = decodeURIComponent(descriptor);
+    if (!decoded) return null;
+    if (decoded.startsWith('primary:')) {
+      const relative = decoded.substring('primary:'.length).replace(/:/g, '/');
+      return relative ? `Penyimpanan internal/${relative}` : 'Penyimpanan internal';
+    }
+    if (decoded.startsWith('home:')) {
+      const relative = decoded.substring('home:'.length).replace(/:/g, '/');
+      return relative ? `Folder beranda/${relative}` : 'Folder beranda';
+    }
+    if (decoded.includes(':')) {
+      const [volume, ...restParts] = decoded.split(':');
+      const rest = restParts.join(':').replace(/:/g, '/');
+      return rest ? `${volume}/${rest}` : volume;
+    }
+    return decoded.replace(/:/g, '/');
+  } catch (error) {
+    console.log('DESCRIBE DIRECTORY ERROR:', error);
+    return null;
+  }
+}
+
+function buildExternalDisplayPath(directoryUri, fileName) {
+  const baseLabel = describeSafDirectory(directoryUri);
+  const sanitizedName = (fileName || '').replace(/^\/+/, '');
+  const trimmedBase = baseLabel ? baseLabel.replace(/\/+$/, '') : null;
+  if (trimmedBase) {
+    const path = sanitizedName ? `${trimmedBase}/${sanitizedName}` : trimmedBase;
+    return `Folder yang kamu pilih: ${path}`;
+  }
+  if (directoryUri) {
+    const trimmedUri = directoryUri.replace(/\/+$/, '');
+    const path = sanitizedName ? `${trimmedUri}/${sanitizedName}` : trimmedUri;
+    return `Folder yang kamu pilih: ${path}`;
+  }
+  return null;
+}
+
+function buildInternalDisplayPath(fileName, destPath) {
+  const sanitizedName = (fileName || '').replace(/^\/+/, '');
+  if (FileSystem.documentDirectory) {
+    const normalizedDir = FileSystem.documentDirectory.endsWith('/')
+      ? FileSystem.documentDirectory
+      : `${FileSystem.documentDirectory}/`;
+    return `Folder aplikasi internal: ${normalizedDir}${sanitizedName}`;
+  }
+  if (destPath) {
+    return `Folder aplikasi internal: ${destPath}`;
+  }
+  return 'Folder aplikasi internal';
+}
+
 async function getSavedDownloadDir() {
   try {
     const content = await FileSystem.readAsStringAsync(DOWNLOAD_PREF_FILE);
@@ -114,51 +224,136 @@ async function setSavedDownloadDir(directoryUri) {
 }
 
 async function saveFileToStorage(tempUri, fileName, mimeType) {
-  try {
-    const hasSAF =
-      Platform.OS === 'android' &&
-      FileSystem.StorageAccessFramework &&
-      typeof FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync === 'function';
-
-    if (hasSAF) {
-      let directoryUri = await getSavedDownloadDir();
-      try {
-        if (!directoryUri) {
-          const DOWNLOADS_URI = 'content://com.android.externalstorage.documents/tree/primary%3ADownload';
-          let permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(DOWNLOADS_URI);
-          if (!permissions.granted) {
-            permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-          }
-          if (permissions.granted) {
-            directoryUri = permissions.directoryUri;
-            await setSavedDownloadDir(directoryUri);
-          }
-        }
-        if (directoryUri) {
-          const base64 = await FileSystem.readAsStringAsync(tempUri, { encoding: FileSystem.EncodingType.Base64 });
-          let destUri;
-          try {
-            destUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName, mimeType);
-          } catch (createError) {
-            console.log('SAF CREATE FILE ERROR:', createError);
-            await setSavedDownloadDir(null);
-          }
-          if (destUri) {
-            await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, { encoding: FileSystem.EncodingType.Base64 });
-            return destUri;
-          }
-        }
-      } catch (error) {
-        console.log('SAF PERMISSION ERROR:', error);
-      }
+  const copyToDocumentDirectory = async () => {
+    if (!FileSystem.documentDirectory) {
+      throw new Error('DOCUMENT_DIRECTORY_UNAVAILABLE');
     }
     const destPath = `${FileSystem.documentDirectory}${fileName}`;
+    try {
+      await FileSystem.deleteAsync(destPath, { idempotent: true });
+    } catch (error) {
+      if (error?.message) {
+        console.log('DELETE TEMP FILE ERROR:', error);
+      }
+    }
     await FileSystem.copyAsync({ from: tempUri, to: destPath });
-    return destPath;
+    return {
+      uri: destPath,
+      displayPath: buildInternalDisplayPath(fileName, destPath),
+    };
+  };
+
+  const hasSAF =
+    Platform.OS === 'android' &&
+    FileSystem.StorageAccessFramework &&
+    typeof FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync === 'function';
+
+  if (hasSAF) {
+    let directoryUri = await getSavedDownloadDir();
+    if (!directoryUri) {
+      try {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (permissions.granted) {
+          directoryUri = permissions.directoryUri;
+          await setSavedDownloadDir(directoryUri);
+        } else {
+          const fallback = await copyToDocumentDirectory();
+          return {
+            uri: fallback.uri,
+            location: 'internal',
+            notice: 'Perangkat tidak mengizinkan memilih folder penyimpanan eksternal.',
+            displayPath: fallback.displayPath,
+          };
+        }
+      } catch (permissionError) {
+        console.log('SAF PERMISSION ERROR:', permissionError);
+        const fallback = await copyToDocumentDirectory();
+        return {
+          uri: fallback.uri,
+          location: 'internal',
+          notice: 'Gagal membuka pemilih folder. File disimpan di folder aplikasi.',
+          displayPath: fallback.displayPath,
+        };
+      }
+    }
+
+    if (directoryUri) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(tempUri, { encoding: FileSystem.EncodingType.Base64 });
+        const destUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName, mimeType);
+        await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        return {
+          uri: destUri,
+          location: 'external',
+          notice: null,
+          displayPath: buildExternalDisplayPath(directoryUri, fileName),
+        };
+      } catch (saveError) {
+        console.log('SAF SAVE ERROR:', saveError);
+        await setSavedDownloadDir(null);
+        const fallback = await copyToDocumentDirectory();
+        return {
+          uri: fallback.uri,
+          location: 'internal',
+          notice: 'Tidak dapat menyimpan ke folder yang dipilih. File disimpan di folder aplikasi.',
+          displayPath: fallback.displayPath,
+        };
+      }
+    }
+  }
+
+  try {
+    const fallback = await copyToDocumentDirectory();
+    return {
+      uri: fallback.uri,
+      location: 'internal',
+      notice:
+        Platform.OS === 'android' && !hasSAF
+          ? 'Perangkat tidak mendukung pemilihan folder eksternal. File disimpan di folder aplikasi.'
+          : null,
+      displayPath: fallback.displayPath,
+    };
   } catch (error) {
     console.log('SAVE FILE ERROR:', error);
-    return tempUri;
+    return {
+      uri: tempUri,
+      location: 'unknown',
+      notice: 'Gagal memindahkan file ke folder aplikasi.',
+      displayPath: tempUri ? `Lokasi sementara: ${tempUri}` : null,
+    };
   }
+}
+
+async function resolveShareableUri(fileName, ...candidates) {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'string') continue;
+    if (candidate.startsWith('file://')) return candidate;
+    if (candidate.startsWith('/')) return `file://${candidate}`;
+  }
+
+  const contentCandidate = candidates.find(uri => typeof uri === 'string' && uri.startsWith('content://'));
+  if (
+    contentCandidate &&
+    FileSystem.StorageAccessFramework &&
+    typeof FileSystem.StorageAccessFramework.readAsStringAsync === 'function'
+  ) {
+    try {
+      const base64 = await FileSystem.StorageAccessFramework.readAsStringAsync(contentCandidate, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const cacheRoot = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!cacheRoot) return null;
+      const sharePath = `${cacheRoot}${fileName}`;
+      await FileSystem.writeAsStringAsync(sharePath, base64, { encoding: FileSystem.EncodingType.Base64 });
+      return sharePath;
+    } catch (error) {
+      console.log('CONTENT SHARE ERROR:', error);
+    }
+  }
+
+  return null;
 }
 
 async function exec(sql, params = []) {
@@ -253,6 +448,8 @@ async function ensureDbReady() {
 // ---------- Dashboard ----------
 function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
+  const modalKeyboardOffset = Platform.OS === "ios" ? insets.bottom + 16 : 0;
   const [metrics, setMetrics] = useState({
     totalStock: 0,
     totalItems: 0,
@@ -290,7 +487,7 @@ function DashboardScreen({ navigation }) {
             IFNULL(SUM(price * stock),0) as totalValue
           FROM items
           GROUP BY label
-          HAVING (? = '' OR label LIKE ?)
+          HAVING (? = '' OR LOWER(label) LIKE ?)
           ORDER BY totalItems DESC
           LIMIT ? OFFSET ?
         `,
@@ -310,7 +507,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, name, category, stock, price, (stock * price) as totalValue
           FROM items
-          WHERE (? = '' OR name LIKE ? OR IFNULL(category,'') LIKE ?)
+          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(category,'')) LIKE ?)
           ORDER BY stock DESC, name ASC
           LIMIT ? OFFSET ?
         `,
@@ -331,7 +528,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
-          WHERE (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY order_date DESC, id DESC
           LIMIT ? OFFSET ?
         `,
@@ -360,7 +557,7 @@ function DashboardScreen({ navigation }) {
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
           WHERE status = 'PROGRESS'
-            AND (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+            AND (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY order_date ASC, id ASC
           LIMIT ? OFFSET ?
         `,
@@ -388,7 +585,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
-          WHERE (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY (quantity * price) DESC, order_date DESC
           LIMIT ? OFFSET ?
         `,
@@ -574,7 +771,8 @@ function DashboardScreen({ navigation }) {
   async function loadDetailPaginated({ type, searchTerm = detailSearch, reset = false }) {
     const config = PAGINATED_CONFIG[type];
     if (!config) return;
-    const normalizedSearch = (searchTerm || "").trim();
+    const trimmedTerm = (searchTerm || "").trim();
+    const normalizedSearch = trimmedTerm.toLowerCase();
     const limit = DETAIL_PAGE_SIZE;
     const offset = reset ? 0 : detailPaging.current.offset;
     const { sql, params } = config.buildQuery(normalizedSearch, limit, offset);
@@ -601,7 +799,7 @@ function DashboardScreen({ navigation }) {
         offset: offset + trimmedRows.length,
         search: normalizedSearch,
       };
-      setDetailSearch(normalizedSearch);
+      setDetailSearch(trimmedTerm);
       setDetailHasMore(hasMore);
     } catch (error) {
       console.log("DETAIL LOAD ERROR:", error);
@@ -630,8 +828,9 @@ function DashboardScreen({ navigation }) {
   function applySearch() {
     if (!isPaginatedType(detailModal.type)) return;
     const term = detailSearchInput.trim();
+    const normalized = term.toLowerCase();
     setDetailSearch(term);
-    detailPaging.current = { type: detailModal.type, offset: 0, search: term };
+    detailPaging.current = { type: detailModal.type, offset: 0, search: normalized };
     loadDetailPaginated({ type: detailModal.type, searchTerm: term, reset: true });
   }
 
@@ -1034,13 +1233,19 @@ function DashboardScreen({ navigation }) {
         onRequestClose={closeDetail}
       >
         <Pressable
-          style={{ flex:1, backgroundColor:"rgba(15,23,42,0.35)", padding:16, justifyContent:"flex-end" }}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", padding: 16 }}
           onPress={closeDetail}
         >
-          <Pressable
-            style={{ backgroundColor:"#fff", borderRadius:24, paddingHorizontal:20, paddingTop:12, paddingBottom:24, maxHeight:"75%" }}
-            onPress={event => event.stopPropagation()}
+          <KeyboardAvoidingView
+            behavior={KEYBOARD_AVOIDING_BEHAVIOR}
+            keyboardVerticalOffset={modalKeyboardOffset}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            pointerEvents="box-none"
           >
+            <Pressable
+              style={{ backgroundColor: "#fff", borderRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, maxHeight: "75%" }}
+              onPress={event => event.stopPropagation()}
+            >
             <View style={{ alignItems:"center", marginBottom:12 }}>
               <View style={{ width:42, height:4, borderRadius:999, backgroundColor:"#E2E8F0" }} />
             </View>
@@ -1138,7 +1343,8 @@ function DashboardScreen({ navigation }) {
                 <Text style={{ color:"#94A3B8", textAlign:"center" }}>Belum ada data untuk ditampilkan.</Text>
               </View>
             )}
-          </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>
@@ -1270,53 +1476,105 @@ function DatePickerField({ label, value, onChange }) {
 }
 
 // ---------- Purchase Orders ----------
-function PurchaseOrdersScreen({ navigation }) {
-  const [orders, setOrders] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
 
-  async function load() {
+function PurchaseOrdersScreen({ navigation }) {
+  const PAGE_SIZE = 20;
+  const [orders, setOrders] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    loadOrders({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadOrders({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadOrders({ search: searchTerm, reset: true });
+    });
+    return unsubscribe;
+  }, [navigation, searchTerm]);
+
+  async function loadOrders({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      setRefreshing(true);
-      const res = await exec(`
-        SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date, note
-        FROM purchase_orders
-        ORDER BY order_date DESC, id DESC
-      `);
-      const list = [];
-      for (let i = 0; i < res.rows.length; i++) {
-        const row = res.rows.item(i);
-        list.push({
-          id: row.id,
-          supplierName: row.supplier_name,
-          ordererName: row.orderer_name,
-          itemName: row.item_name,
-          quantity: Number(row.quantity ?? 0),
-          price: Number(row.price ?? 0),
-          status: row.status,
-          orderDate: row.order_date,
-          note: row.note,
-        });
-      }
-      setOrders(list);
+      const res = await exec(
+        `
+          SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date, note
+          FROM purchase_orders
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
+          ORDER BY order_date DESC, id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageOrders = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        supplierName: row.supplier_name,
+        ordererName: row.orderer_name,
+        itemName: row.item_name,
+        quantity: Number(row.quantity ?? 0),
+        price: Number(row.price ?? 0),
+        status: row.status,
+        orderDate: row.order_date,
+        note: row.note,
+      }));
+      const nextOffset = offset + pageOrders.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setOrders(prev => (shouldReset ? pageOrders : [...prev, ...pageOrders]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
     } catch (error) {
       console.log("PO LOAD ERROR:", error);
     } finally {
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
     }
   }
 
-  useEffect(() => {
-    load();
-    const unsubscribe = navigation.addListener("focus", load);
-    return unsubscribe;
-  }, [navigation]);
+  const handleRefresh = () => loadOrders({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadOrders({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
 
   const renderItem = ({ item }) => {
     const totalValue = item.quantity * item.price;
     const statusStyle = getPOStatusStyle(item.status);
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate("PurchaseOrderDetail", { orderId: item.id, onDone: load })}
+        onPress={() => navigation.navigate("PurchaseOrderDetail", { orderId: item.id, onDone: () => loadOrders({ search: searchTerm, reset: true }) })}
         style={{ backgroundColor: "#fff", padding: 16, borderRadius: 14, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 12 }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1347,25 +1605,48 @@ function PurchaseOrdersScreen({ navigation }) {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A" }}>Purchase Order</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate("AddPurchaseOrder", { onDone: load })}
+            onPress={() => navigation.navigate("AddPurchaseOrder", { onDone: () => loadOrders({ search: searchTerm, reset: true }) })}
             style={{ backgroundColor: "#14B8A6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
           >
             <Text style={{ color: "#fff", fontWeight: "700" }}>+ PO</Text>
           </TouchableOpacity>
         </View>
+        <TextInput
+          placeholder="Cari nama barang, pemasok, atau catatan..."
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          style={{ backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, paddingHorizontal: 12, height: 44, marginBottom: 12 }}
+        />
         <FlatList
           data={orders}
           keyExtractor={item => String(item.id)}
           renderItem={renderItem}
           refreshing={refreshing}
-          onRefresh={load}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          ListEmptyComponent={
-            <View style={{ paddingVertical: 40, alignItems: "center" }}>
-              <Ionicons name="cart-outline" size={36} color="#CBD5F5" />
-              <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada purchase order. Tambahkan untuk mulai mencatat!</Text>
-            </View>
+          onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 16 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : null
           }
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ paddingVertical: 40 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : (
+              <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                <Ionicons name="cart-outline" size={36} color="#CBD5F5" />
+                <Text style={{ color: "#94A3B8", marginTop: 8 }}>
+                  {searchTerm.trim() ? "Tidak ada purchase order yang cocok." : "Belum ada purchase order. Tambahkan untuk mulai mencatat!"}
+                </Text>
+              </View>
+            )
+          }
+          contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
     </SafeAreaView>
@@ -1421,18 +1702,18 @@ function AddPurchaseOrderScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>Tambah Purchase Order</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Tambah Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
         <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
         <DatePickerField label="Tanggal" value={orderDate} onChange={setOrderDate} />
         <Input label="Qty" value={quantity} onChangeText={text => setQuantity(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Harga Satuan" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
-        <View style={{ marginBottom:12 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Status</Text>
-          <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {PO_STATUS_OPTIONS.map(option => {
               const active = option === status;
               return (
@@ -1464,10 +1745,10 @@ function AddPurchaseOrderScreen({ route, navigation }) {
             style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, paddingVertical:10, minHeight:80, textAlignVertical:"top" }}
           />
         </View>
-        <TouchableOpacity onPress={save} style={{ marginTop:8, backgroundColor:"#14B8A6", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>Simpan PO</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 8, backgroundColor: "#14B8A6", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan PO</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -1561,18 +1842,18 @@ function EditPurchaseOrderScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>Edit Purchase Order</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Edit Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
         <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
         <DatePickerField label="Tanggal" value={orderDate} onChange={setOrderDate} />
         <Input label="Qty" value={quantity} onChangeText={text => setQuantity(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Harga Satuan" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
-        <View style={{ marginBottom:12 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Status</Text>
-          <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {PO_STATUS_OPTIONS.map(option => {
               const active = option === status;
               return (
@@ -1604,10 +1885,10 @@ function EditPurchaseOrderScreen({ route, navigation }) {
             style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, paddingVertical:10, minHeight:80, textAlignVertical:"top" }}
           />
         </View>
-        <TouchableOpacity onPress={save} style={{ marginTop:8, backgroundColor:"#2563EB", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>Simpan Perubahan</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 8, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -1847,11 +2128,39 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
         </html>
       `;
       const { uri } = await Print.printToFileAsync({ html, base64: false, fileName: fileBaseName });
-      const savedUri = await saveFileToStorage(uri, `${fileBaseName}.pdf`, 'application/pdf');
+      const {
+        uri: savedUri,
+        location: savedLocation,
+        notice: savedNotice,
+        displayPath: savedDisplayPath,
+      } = await saveFileToStorage(
+        uri,
+        `${fileBaseName}.pdf`,
+        'application/pdf'
+      );
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(savedUri, { mimeType: 'application/pdf', dialogTitle: 'Bagikan Invoice Purchase Order', UTI: 'com.adobe.pdf' });
+        const resolvedShareUri = await resolveShareableUri(
+          `${fileBaseName}-share.pdf`,
+          uri,
+          savedUri
+        );
+        if (resolvedShareUri) {
+          await Sharing.shareAsync(resolvedShareUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Bagikan Invoice Purchase Order',
+            UTI: 'com.adobe.pdf',
+          });
+        } else {
+          console.log('SHARE URI NOT AVAILABLE FOR PDF');
+        }
       }
-      Alert.alert('Invoice Disimpan', savedUri.startsWith('content://') ? 'File tersimpan di folder yang kamu pilih.' : `File tersimpan di ${savedUri}`);
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === 'external'
+          ? 'File tersimpan di folder yang kamu pilih.'
+          : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert('Invoice Disimpan', alertMessage);
     } catch (error) {
       console.log('PO PDF ERROR:', error);
       Alert.alert('Gagal', 'Invoice tidak dapat dibuat saat ini.');
@@ -1868,12 +2177,40 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
         format: 'png',
         quality: 1,
       });
-      const fileName = `${buildPOFileBase(order)}.png`;
-      const savedUri = await saveFileToStorage(tempUri, fileName, 'image/png');
+      const fileBaseName = buildPOFileBase(order);
+      const fileName = `${fileBaseName}.png`;
+      const {
+        uri: savedUri,
+        location: savedLocation,
+        notice: savedNotice,
+        displayPath: savedDisplayPath,
+      } = await saveFileToStorage(
+        tempUri,
+        fileName,
+        'image/png'
+      );
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(savedUri, { mimeType: 'image/png', dialogTitle: 'Bagikan Invoice PO (PNG)' });
+        const resolvedShareUri = await resolveShareableUri(
+          `${fileBaseName}-share.png`,
+          tempUri,
+          savedUri
+        );
+        if (resolvedShareUri) {
+          await Sharing.shareAsync(resolvedShareUri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Bagikan Invoice PO (PNG)',
+          });
+        } else {
+          console.log('SHARE URI NOT AVAILABLE FOR IMAGE');
+        }
       }
-      Alert.alert('Gambar Disimpan', savedUri.startsWith('content://') ? 'File tersimpan di folder yang kamu pilih.' : `File tersimpan di ${savedUri}`);
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === 'external'
+          ? 'File tersimpan di folder yang kamu pilih.'
+          : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert('Gambar Disimpan', alertMessage);
     } catch (error) {
       console.log('PO IMAGE ERROR:', error);
       Alert.alert('Gagal', 'Gambar invoice tidak dapat dibuat.');
@@ -2080,15 +2417,87 @@ function DetailRow({ label, value, bold = false, multiline = false }) {
 }
 
 // ---------- Barang (List) ----------
+
 function ItemsScreen({ navigation }) {
+  const PAGE_SIZE = 20;
   const [items, setItems] = useState([]);
-  const [q, setQ] = useState("");
-  async function load() {
-    const res = await exec(`SELECT * FROM items ORDER BY id DESC`);
-    const rows = []; for (let i = 0; i < res.rows.length; i++) rows.push(res.rows.item(i));
-    setItems(rows);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    loadItems({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadItems({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadItems({ search: searchTerm, reset: true });
+    });
+    return unsubscribe;
+  }, [navigation, searchTerm]);
+
+  async function loadItems({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const res = await exec(
+        `
+          SELECT id, name, category, price, stock
+          FROM items
+          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(category,'')) LIKE ?)
+          ORDER BY id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageItems = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        price: Number(row.price ?? 0),
+        stock: Number(row.stock ?? 0),
+      }));
+      const nextOffset = offset + pageItems.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setItems(prev => (shouldReset ? pageItems : [...prev, ...pageItems]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
+    } catch (error) {
+      console.log("ITEMS LOAD ERROR:", error);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
   }
-  useEffect(() => { const unsub = navigation.addListener('focus', load); return unsub; }, [navigation]);
 
   function confirmDelete(item) {
     Alert.alert(
@@ -2109,30 +2518,39 @@ function ItemsScreen({ navigation }) {
     try {
       await exec(`DELETE FROM stock_history WHERE item_id = ?`, [id]);
       await exec(`DELETE FROM items WHERE id = ?`, [id]);
-      await load();
+      await loadItems({ search: searchTerm, reset: true });
     } catch (error) {
       console.log("DELETE ITEM ERROR:", error);
       Alert.alert("Gagal", "Barang tidak dapat dihapus. Silakan coba lagi.");
     }
   }
 
+  const handleRefresh = () => loadItems({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadItems({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC" }}>
-      <View style={{ padding:16 }}>
+      <View style={{ padding:16, flex:1 }}>
         <View style={{ flexDirection:"row", gap:8, marginBottom:12 }}>
-          <TextInput placeholder="Cari nama/kategori…" value={q} onChangeText={setQ}
-            style={{ flex:1, backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }} />
+          <TextInput
+            placeholder="Cari nama/kategori…"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            style={{ flex:1, backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }}
+          />
           <TouchableOpacity
-            onPress={() => navigation.navigate("AddItem", { onDone: load })}
-            style={{ backgroundColor:"#10B981", paddingHorizontal:16, borderRadius:12, alignItems:"center", justifyContent:"center" }}>
+            onPress={() => navigation.navigate("AddItem", { onDone: () => loadItems({ search: searchTerm, reset: true }) })}
+            style={{ backgroundColor:"#10B981", paddingHorizontal:16, borderRadius:12, alignItems:"center", justifyContent:"center" }}
+          >
             <Text style={{ color:"#fff", fontWeight:"700" }}>+ Barang</Text>
           </TouchableOpacity>
         </View>
         <FlatList
-          data={items.filter(x =>
-            x.name.toLowerCase().includes(q.toLowerCase()) ||
-            (x.category||"").toLowerCase().includes(q.toLowerCase())
-          )}
+          data={items}
           keyExtractor={it => String(it.id)}
           renderItem={({ item }) => (
             <View style={{ backgroundColor:"#fff", padding:12, borderRadius:12, borderWidth:1, borderColor:"#E5E7EB", marginBottom:10 }}>
@@ -2143,18 +2561,18 @@ function ItemsScreen({ navigation }) {
                 <Text>Stok: {item.stock}</Text>
               </View>
               <View style={{ flexDirection:"row", gap:8, marginTop:10 }}>
-                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "IN", onDone: load })} label="Masuk" color="#2563EB" />
-                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "OUT", onDone: load })} label="Keluar" color="#EF4444" />
+                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "IN", onDone: () => loadItems({ search: searchTerm, reset: true }) })} label="Masuk" color="#2563EB" />
+                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "OUT", onDone: () => loadItems({ search: searchTerm, reset: true }) })} label="Keluar" color="#EF4444" />
                 <TouchableOpacity
-                  onPress={() => navigation.navigate("AddItem", { item, onDone: load })}
-                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10, borderWidth:1, borderColor:"#3B82F6", backgroundColor:"#fff" }}
+                  onPress={() => navigation.navigate("AddItem", { item, onDone: () => loadItems({ search: searchTerm, reset: true }) })}
+                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10,borderWidth:1, borderColor:"#3B82F6", backgroundColor:"#fff" }}
                 >
                   <Ionicons name="create-outline" size={18} color="#3B82F6" style={{ marginRight:6 }} />
                   <Text style={{ color:"#3B82F6", fontWeight:"700" }}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => confirmDelete(item)}
-                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10, borderWidth:1, borderColor:"#F87171", backgroundColor:"#fff" }}
+                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10,borderWidth:1, borderColor:"#F87171", backgroundColor:"#fff" }}
                 >
                   <Ionicons name="trash-outline" size={18} color="#F87171" style={{ marginRight:6 }} />
                   <Text style={{ color:"#F87171", fontWeight:"700" }}>Hapus</Text>
@@ -2162,6 +2580,32 @@ function ItemsScreen({ navigation }) {
               </View>
             </View>
           )}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical:16 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ paddingVertical:40 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : (
+              <View style={{ paddingVertical:40, alignItems:"center" }}>
+                <Ionicons name="cube-outline" size={32} color="#CBD5F5" />
+                <Text style={{ color:"#94A3B8", marginTop:8 }}>
+                  {searchTerm.trim() ? "Tidak ada barang yang cocok." : "Belum ada barang tersimpan."}
+                </Text>
+              </View>
+            )
+          }
+          contentContainerStyle={{ paddingBottom:40 }}
         />
       </View>
     </SafeAreaView>
@@ -2176,65 +2620,28 @@ function Btn({ label, onPress, color="#2563EB" }) {
 }
 
 // ---------- Tambah Barang ----------
+
 function AddItemScreen({ route, navigation }) {
   const onDone = route.params?.onDone;
   const initialItem = route.params?.item || null;
-  const [editingItem, setEditingItem] = useState(initialItem);
   const [itemId, setItemId] = useState(initialItem?.id ?? null);
   const [name, setName] = useState(initialItem?.name ?? "");
   const [category, setCategory] = useState(initialItem?.category ?? "");
   const [price, setPrice] = useState(initialItem ? formatNumberInput(String(initialItem.price ?? "")) : "");
   const [stock, setStock] = useState(initialItem ? formatNumberInput(String(initialItem.stock ?? "")) : "");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    if (initialItem) setEditingItem(initialItem);
-  }, [initialItem?.id]);
-
-  useEffect(() => {
-    let isActive = true;
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      return () => { isActive = false; };
-    }
-    (async () => {
-      try {
-        setIsSearching(true);
-        const res = await exec(`
-          SELECT id, name, category, price, stock
-          FROM items
-          WHERE name LIKE ? OR IFNULL(category,'') LIKE ?
-          ORDER BY name
-          LIMIT 20
-        `, [`%${searchTerm.trim()}%`, `%${searchTerm.trim()}%`]);
-        if (!isActive) return;
-        const rows = [];
-        for (let i = 0; i < res.rows.length; i++) rows.push(res.rows.item(i));
-        setSearchResults(rows);
-      } catch (error) {
-        console.log("ITEM SEARCH ERROR:", error);
-      } finally {
-        if (isActive) setIsSearching(false);
-      }
-    })();
-    return () => { isActive = false; };
-  }, [searchTerm]);
-
-  useEffect(() => {
-    if (editingItem) {
-      setItemId(editingItem.id);
-      setName(editingItem.name || "");
-      setCategory(editingItem.category || "");
-      setPrice(formatNumberInput(String(editingItem.price ?? "")));
-      setStock(formatNumberInput(String(editingItem.stock ?? "")));
+    if (initialItem) {
+      setItemId(initialItem.id);
+      setName(initialItem.name || "");
+      setCategory(initialItem.category || "");
+      setPrice(formatNumberInput(String(initialItem.price ?? "")));
+      setStock(formatNumberInput(String(initialItem.stock ?? "")));
       navigation.setOptions({ title: "Edit Barang" });
     } else {
       resetForm();
-      navigation.setOptions({ title: "Tambah Barang" });
     }
-  }, [editingItem, navigation]);
+  }, [initialItem?.id, navigation]);
 
   function resetForm() {
     setItemId(null);
@@ -2242,12 +2649,7 @@ function AddItemScreen({ route, navigation }) {
     setCategory("");
     setPrice("");
     setStock("");
-  }
-
-  function startEditItem(item) {
-    setSearchTerm("");
-    setSearchResults([]);
-    setEditingItem(item);
+    navigation.setOptions({ title: "Tambah Barang" });
   }
 
   const isEdit = Boolean(itemId);
@@ -2271,56 +2673,22 @@ function AddItemScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom:24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
-        <View style={{ marginBottom:16 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Cari barang untuk diedit</Text>
-          <TextInput
-            placeholder="Cari nama atau kategori..."
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }}
-          />
-          {searchTerm.trim() ? (
-            <View style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E2E8F0", borderRadius:12, marginTop:8 }}>
-              {isSearching ? (
-                <View style={{ padding:16, alignItems:"center" }}>
-                  <ActivityIndicator color="#2563EB" />
-                </View>
-              ) : searchResults.length ? (
-                searchResults.map(item => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => startEditItem(item)}
-                    style={({ pressed }) => ({ paddingVertical:12, paddingHorizontal:16, backgroundColor: pressed ? "#F1F5F9" : "#fff", borderBottomWidth:1, borderBottomColor:"#E2E8F0" })}
-                  >
-                    <Text style={{ fontWeight:"600", color:"#0F172A" }}>{item.name}</Text>
-                    <Text style={{ color:"#64748B", fontSize:12 }}>{item.category || "Tanpa kategori"}</Text>
-                  </Pressable>
-                ))
-              ) : (
-                <View style={{ padding:16 }}>
-                  <Text style={{ color:"#94A3B8" }}>Tidak ada hasil.</Text>
-                </View>
-              )}
-            </View>
-          ) : null}
-        </View>
-
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
         <Input label="Nama" value={name} onChangeText={setName} />
         <Input label="Kategori" value={category} onChangeText={setCategory} />
         <Input label="Harga (Rp)" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Stok" value={stock} onChangeText={text => setStock(formatNumberInput(text))} keyboardType="numeric" />
-        <TouchableOpacity onPress={save} style={{ marginTop:16, backgroundColor:"#2563EB", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 16, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
         </TouchableOpacity>
         {isEdit ? (
-          <TouchableOpacity onPress={() => setEditingItem(null)} style={{ marginTop:12, paddingVertical:12, borderRadius:12, alignItems:"center", borderWidth:1, borderColor:"#CBD5F5" }}>
-            <Text style={{ color:"#2563EB", fontWeight:"600" }}>Buat Item Baru</Text>
+          <TouchableOpacity onPress={resetForm} style={{ marginTop: 12, paddingVertical: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#CBD5F5" }}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Buat Item Baru</Text>
           </TouchableOpacity>
         ) : null}
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -2349,45 +2717,106 @@ function StockMoveScreen({ route, navigation }) {
     onDone && onDone(); navigation.goBack();
   }
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <Text style={{ fontSize:18, fontWeight:"700", marginBottom:6 }}>{mode === "IN" ? "Barang Masuk" : "Barang Keluar"}</Text>
-      <Text style={{ color:"#64748B" }}>{item.name} • Stok: {item.stock}</Text>
-      <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" />
-      <Input label="Catatan (opsional)" value={note} onChangeText={setNote} />
-      <TouchableOpacity onPress={commit}
-        style={{ marginTop:16, backgroundColor: mode === "IN" ? "#2563EB" : "#EF4444", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-        <Text style={{ color:"#fff", fontWeight:"700" }}>{mode === "IN" ? "Simpan Masuk" : "Simpan Keluar"}</Text>
-      </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 6 }}>{mode === "IN" ? "Barang Masuk" : "Barang Keluar"}</Text>
+        <Text style={{ color: "#64748B" }}>{item.name} • Stok: {item.stock}</Text>
+        <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" />
+        <Input label="Catatan (opsional)" value={note} onChangeText={setNote} />
+        <TouchableOpacity
+          onPress={commit}
+          style={{ marginTop: 16, backgroundColor: mode === "IN" ? "#2563EB" : "#EF4444", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>{mode === "IN" ? "Simpan Masuk" : "Simpan Keluar"}</Text>
+        </TouchableOpacity>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
 
 // ---------- History ----------
+
 function HistoryScreen() {
+  const PAGE_SIZE = 30;
   const [rows, setRows] = useState([]);
-  const [q, setQ] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
 
-  async function load() {
-    const res = await exec(`
-      SELECT h.id, h.type, h.qty, h.note, h.created_at, i.name
-      FROM stock_history h JOIN items i ON i.id = h.item_id
-      ORDER BY h.id DESC
-      LIMIT 400
-    `);
-    const arr = []; for (let i = 0; i < res.rows.length; i++) arr.push(res.rows.item(i));
-    setRows(arr);
+  useEffect(() => {
+    loadHistory({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadHistory({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  async function loadHistory({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const res = await exec(
+        `
+          SELECT h.id, h.type, h.qty, h.note, h.created_at, i.name
+          FROM stock_history h JOIN items i ON i.id = h.item_id
+          WHERE (? = '' OR LOWER(i.name) LIKE ? OR LOWER(IFNULL(h.note,'')) LIKE ? OR LOWER(h.type) LIKE ?)
+          ORDER BY h.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageRows = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        type: row.type,
+        qty: Number(row.qty ?? 0),
+        note: row.note,
+        created_at: row.created_at,
+        name: row.name,
+      }));
+      const nextOffset = offset + pageRows.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setRows(prev => (shouldReset ? pageRows : [...prev, ...pageRows]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
+    } catch (error) {
+      console.log("HISTORY LOAD ERROR:", error);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
   }
-  useEffect(() => { load(); }, []);
 
-  const filteredRows = rows.filter(item => {
-    const query = q.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      item.name?.toLowerCase().includes(query) ||
-      (item.note || "").toLowerCase().includes(query) ||
-      item.type?.toLowerCase().includes(query)
-    );
-  });
+  const handleRefresh = () => loadHistory({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadHistory({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
 
   const renderItem = ({ item }) => (
     <View style={{ backgroundColor:"#fff", padding:12, borderRadius:12, borderWidth:1, borderColor:"#E5E7EB", marginBottom:10 }}>
@@ -2403,14 +2832,41 @@ function HistoryScreen() {
       <Text style={{ fontSize:20, fontWeight:"700", marginBottom:12 }}>History</Text>
       <TextInput
         placeholder="Cari nama, catatan, atau tipe..."
-        value={q}
-        onChangeText={setQ}
+        value={searchTerm}
+        onChangeText={setSearchTerm}
         style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44, marginBottom:12 }}
       />
-      <FlatList data={filteredRows} keyExtractor={it => String(it.id)} renderItem={renderItem} />
-      <TouchableOpacity onPress={load} style={{ marginTop:12, backgroundColor:"#2563EB", paddingVertical:12, borderRadius:12, alignItems:"center" }}>
-        <Text style={{ color:"#fff", fontWeight:"700" }}>Refresh</Text>
-      </TouchableOpacity>
+      <FlatList
+        data={rows}
+        keyExtractor={it => String(it.id)}
+        renderItem={renderItem}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={{ paddingVertical:16 }}>
+              <ActivityIndicator color="#2563EB" />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={{ paddingVertical:40 }}>
+              <ActivityIndicator color="#2563EB" />
+            </View>
+          ) : (
+            <View style={{ paddingVertical:40, alignItems:"center" }}>
+              <Ionicons name="time-outline" size={32} color="#CBD5F5" />
+              <Text style={{ color:"#94A3B8", marginTop:8 }}>
+                {searchTerm.trim() ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat stok."}
+              </Text>
+            </View>
+          )
+        }
+        contentContainerStyle={{ paddingBottom:32 }}
+      />
     </SafeAreaView>
   );
 }
