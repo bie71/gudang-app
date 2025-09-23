@@ -290,7 +290,7 @@ function DashboardScreen({ navigation }) {
             IFNULL(SUM(price * stock),0) as totalValue
           FROM items
           GROUP BY label
-          HAVING (? = '' OR label LIKE ?)
+          HAVING (? = '' OR LOWER(label) LIKE ?)
           ORDER BY totalItems DESC
           LIMIT ? OFFSET ?
         `,
@@ -310,7 +310,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, name, category, stock, price, (stock * price) as totalValue
           FROM items
-          WHERE (? = '' OR name LIKE ? OR IFNULL(category,'') LIKE ?)
+          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(category,'')) LIKE ?)
           ORDER BY stock DESC, name ASC
           LIMIT ? OFFSET ?
         `,
@@ -331,7 +331,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
-          WHERE (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY order_date DESC, id DESC
           LIMIT ? OFFSET ?
         `,
@@ -360,7 +360,7 @@ function DashboardScreen({ navigation }) {
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
           WHERE status = 'PROGRESS'
-            AND (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+            AND (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY order_date ASC, id ASC
           LIMIT ? OFFSET ?
         `,
@@ -388,7 +388,7 @@ function DashboardScreen({ navigation }) {
         sql: `
           SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
           FROM purchase_orders
-          WHERE (? = '' OR item_name LIKE ? OR IFNULL(orderer_name,'') LIKE ? OR IFNULL(supplier_name,'') LIKE ?)
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
           ORDER BY (quantity * price) DESC, order_date DESC
           LIMIT ? OFFSET ?
         `,
@@ -574,7 +574,8 @@ function DashboardScreen({ navigation }) {
   async function loadDetailPaginated({ type, searchTerm = detailSearch, reset = false }) {
     const config = PAGINATED_CONFIG[type];
     if (!config) return;
-    const normalizedSearch = (searchTerm || "").trim();
+    const trimmedTerm = (searchTerm || "").trim();
+    const normalizedSearch = trimmedTerm.toLowerCase();
     const limit = DETAIL_PAGE_SIZE;
     const offset = reset ? 0 : detailPaging.current.offset;
     const { sql, params } = config.buildQuery(normalizedSearch, limit, offset);
@@ -601,7 +602,7 @@ function DashboardScreen({ navigation }) {
         offset: offset + trimmedRows.length,
         search: normalizedSearch,
       };
-      setDetailSearch(normalizedSearch);
+      setDetailSearch(trimmedTerm);
       setDetailHasMore(hasMore);
     } catch (error) {
       console.log("DETAIL LOAD ERROR:", error);
@@ -630,8 +631,9 @@ function DashboardScreen({ navigation }) {
   function applySearch() {
     if (!isPaginatedType(detailModal.type)) return;
     const term = detailSearchInput.trim();
+    const normalized = term.toLowerCase();
     setDetailSearch(term);
-    detailPaging.current = { type: detailModal.type, offset: 0, search: term };
+    detailPaging.current = { type: detailModal.type, offset: 0, search: normalized };
     loadDetailPaginated({ type: detailModal.type, searchTerm: term, reset: true });
   }
 
@@ -1270,53 +1272,105 @@ function DatePickerField({ label, value, onChange }) {
 }
 
 // ---------- Purchase Orders ----------
-function PurchaseOrdersScreen({ navigation }) {
-  const [orders, setOrders] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
 
-  async function load() {
+function PurchaseOrdersScreen({ navigation }) {
+  const PAGE_SIZE = 20;
+  const [orders, setOrders] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    loadOrders({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadOrders({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadOrders({ search: searchTerm, reset: true });
+    });
+    return unsubscribe;
+  }, [navigation, searchTerm]);
+
+  async function loadOrders({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      setRefreshing(true);
-      const res = await exec(`
-        SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date, note
-        FROM purchase_orders
-        ORDER BY order_date DESC, id DESC
-      `);
-      const list = [];
-      for (let i = 0; i < res.rows.length; i++) {
-        const row = res.rows.item(i);
-        list.push({
-          id: row.id,
-          supplierName: row.supplier_name,
-          ordererName: row.orderer_name,
-          itemName: row.item_name,
-          quantity: Number(row.quantity ?? 0),
-          price: Number(row.price ?? 0),
-          status: row.status,
-          orderDate: row.order_date,
-          note: row.note,
-        });
-      }
-      setOrders(list);
+      const res = await exec(
+        `
+          SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date, note
+          FROM purchase_orders
+          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
+          ORDER BY order_date DESC, id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageOrders = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        supplierName: row.supplier_name,
+        ordererName: row.orderer_name,
+        itemName: row.item_name,
+        quantity: Number(row.quantity ?? 0),
+        price: Number(row.price ?? 0),
+        status: row.status,
+        orderDate: row.order_date,
+        note: row.note,
+      }));
+      const nextOffset = offset + pageOrders.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setOrders(prev => (shouldReset ? pageOrders : [...prev, ...pageOrders]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
     } catch (error) {
       console.log("PO LOAD ERROR:", error);
     } finally {
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
     }
   }
 
-  useEffect(() => {
-    load();
-    const unsubscribe = navigation.addListener("focus", load);
-    return unsubscribe;
-  }, [navigation]);
+  const handleRefresh = () => loadOrders({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadOrders({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
 
   const renderItem = ({ item }) => {
     const totalValue = item.quantity * item.price;
     const statusStyle = getPOStatusStyle(item.status);
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate("PurchaseOrderDetail", { orderId: item.id, onDone: load })}
+        onPress={() => navigation.navigate("PurchaseOrderDetail", { orderId: item.id, onDone: () => loadOrders({ search: searchTerm, reset: true }) })}
         style={{ backgroundColor: "#fff", padding: 16, borderRadius: 14, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 12 }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1347,25 +1401,48 @@ function PurchaseOrdersScreen({ navigation }) {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A" }}>Purchase Order</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate("AddPurchaseOrder", { onDone: load })}
+            onPress={() => navigation.navigate("AddPurchaseOrder", { onDone: () => loadOrders({ search: searchTerm, reset: true }) })}
             style={{ backgroundColor: "#14B8A6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
           >
             <Text style={{ color: "#fff", fontWeight: "700" }}>+ PO</Text>
           </TouchableOpacity>
         </View>
+        <TextInput
+          placeholder="Cari nama barang, pemasok, atau catatan..."
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          style={{ backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, paddingHorizontal: 12, height: 44, marginBottom: 12 }}
+        />
         <FlatList
           data={orders}
           keyExtractor={item => String(item.id)}
           renderItem={renderItem}
           refreshing={refreshing}
-          onRefresh={load}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          ListEmptyComponent={
-            <View style={{ paddingVertical: 40, alignItems: "center" }}>
-              <Ionicons name="cart-outline" size={36} color="#CBD5F5" />
-              <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada purchase order. Tambahkan untuk mulai mencatat!</Text>
-            </View>
+          onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 16 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : null
           }
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ paddingVertical: 40 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : (
+              <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                <Ionicons name="cart-outline" size={36} color="#CBD5F5" />
+                <Text style={{ color: "#94A3B8", marginTop: 8 }}>
+                  {searchTerm.trim() ? "Tidak ada purchase order yang cocok." : "Belum ada purchase order. Tambahkan untuk mulai mencatat!"}
+                </Text>
+              </View>
+            )
+          }
+          contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
     </SafeAreaView>
@@ -2080,15 +2157,87 @@ function DetailRow({ label, value, bold = false, multiline = false }) {
 }
 
 // ---------- Barang (List) ----------
+
 function ItemsScreen({ navigation }) {
+  const PAGE_SIZE = 20;
   const [items, setItems] = useState([]);
-  const [q, setQ] = useState("");
-  async function load() {
-    const res = await exec(`SELECT * FROM items ORDER BY id DESC`);
-    const rows = []; for (let i = 0; i < res.rows.length; i++) rows.push(res.rows.item(i));
-    setItems(rows);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    loadItems({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadItems({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadItems({ search: searchTerm, reset: true });
+    });
+    return unsubscribe;
+  }, [navigation, searchTerm]);
+
+  async function loadItems({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const res = await exec(
+        `
+          SELECT id, name, category, price, stock
+          FROM items
+          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(category,'')) LIKE ?)
+          ORDER BY id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageItems = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        price: Number(row.price ?? 0),
+        stock: Number(row.stock ?? 0),
+      }));
+      const nextOffset = offset + pageItems.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setItems(prev => (shouldReset ? pageItems : [...prev, ...pageItems]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
+    } catch (error) {
+      console.log("ITEMS LOAD ERROR:", error);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
   }
-  useEffect(() => { const unsub = navigation.addListener('focus', load); return unsub; }, [navigation]);
 
   function confirmDelete(item) {
     Alert.alert(
@@ -2109,30 +2258,39 @@ function ItemsScreen({ navigation }) {
     try {
       await exec(`DELETE FROM stock_history WHERE item_id = ?`, [id]);
       await exec(`DELETE FROM items WHERE id = ?`, [id]);
-      await load();
+      await loadItems({ search: searchTerm, reset: true });
     } catch (error) {
       console.log("DELETE ITEM ERROR:", error);
       Alert.alert("Gagal", "Barang tidak dapat dihapus. Silakan coba lagi.");
     }
   }
 
+  const handleRefresh = () => loadItems({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadItems({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC" }}>
-      <View style={{ padding:16 }}>
+      <View style={{ padding:16, flex:1 }}>
         <View style={{ flexDirection:"row", gap:8, marginBottom:12 }}>
-          <TextInput placeholder="Cari nama/kategori…" value={q} onChangeText={setQ}
-            style={{ flex:1, backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }} />
+          <TextInput
+            placeholder="Cari nama/kategori…"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            style={{ flex:1, backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }}
+          />
           <TouchableOpacity
-            onPress={() => navigation.navigate("AddItem", { onDone: load })}
-            style={{ backgroundColor:"#10B981", paddingHorizontal:16, borderRadius:12, alignItems:"center", justifyContent:"center" }}>
+            onPress={() => navigation.navigate("AddItem", { onDone: () => loadItems({ search: searchTerm, reset: true }) })}
+            style={{ backgroundColor:"#10B981", paddingHorizontal:16, borderRadius:12, alignItems:"center", justifyContent:"center" }}
+          >
             <Text style={{ color:"#fff", fontWeight:"700" }}>+ Barang</Text>
           </TouchableOpacity>
         </View>
         <FlatList
-          data={items.filter(x =>
-            x.name.toLowerCase().includes(q.toLowerCase()) ||
-            (x.category||"").toLowerCase().includes(q.toLowerCase())
-          )}
+          data={items}
           keyExtractor={it => String(it.id)}
           renderItem={({ item }) => (
             <View style={{ backgroundColor:"#fff", padding:12, borderRadius:12, borderWidth:1, borderColor:"#E5E7EB", marginBottom:10 }}>
@@ -2143,18 +2301,18 @@ function ItemsScreen({ navigation }) {
                 <Text>Stok: {item.stock}</Text>
               </View>
               <View style={{ flexDirection:"row", gap:8, marginTop:10 }}>
-                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "IN", onDone: load })} label="Masuk" color="#2563EB" />
-                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "OUT", onDone: load })} label="Keluar" color="#EF4444" />
+                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "IN", onDone: () => loadItems({ search: searchTerm, reset: true }) })} label="Masuk" color="#2563EB" />
+                <Btn onPress={() => navigation.navigate("StockMove", { item, mode: "OUT", onDone: () => loadItems({ search: searchTerm, reset: true }) })} label="Keluar" color="#EF4444" />
                 <TouchableOpacity
-                  onPress={() => navigation.navigate("AddItem", { item, onDone: load })}
-                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10, borderWidth:1, borderColor:"#3B82F6", backgroundColor:"#fff" }}
+                  onPress={() => navigation.navigate("AddItem", { item, onDone: () => loadItems({ search: searchTerm, reset: true }) })}
+                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10,borderWidth:1, borderColor:"#3B82F6", backgroundColor:"#fff" }}
                 >
                   <Ionicons name="create-outline" size={18} color="#3B82F6" style={{ marginRight:6 }} />
                   <Text style={{ color:"#3B82F6", fontWeight:"700" }}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => confirmDelete(item)}
-                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10, borderWidth:1, borderColor:"#F87171", backgroundColor:"#fff" }}
+                  style={{ flexDirection:"row", alignItems:"center", paddingVertical:10, paddingHorizontal:14, borderRadius:10,borderWidth:1, borderColor:"#F87171", backgroundColor:"#fff" }}
                 >
                   <Ionicons name="trash-outline" size={18} color="#F87171" style={{ marginRight:6 }} />
                   <Text style={{ color:"#F87171", fontWeight:"700" }}>Hapus</Text>
@@ -2162,6 +2320,32 @@ function ItemsScreen({ navigation }) {
               </View>
             </View>
           )}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical:16 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ paddingVertical:40 }}>
+                <ActivityIndicator color="#2563EB" />
+              </View>
+            ) : (
+              <View style={{ paddingVertical:40, alignItems:"center" }}>
+                <Ionicons name="cube-outline" size={32} color="#CBD5F5" />
+                <Text style={{ color:"#94A3B8", marginTop:8 }}>
+                  {searchTerm.trim() ? "Tidak ada barang yang cocok." : "Belum ada barang tersimpan."}
+                </Text>
+              </View>
+            )
+          }
+          contentContainerStyle={{ paddingBottom:40 }}
         />
       </View>
     </SafeAreaView>
@@ -2176,65 +2360,28 @@ function Btn({ label, onPress, color="#2563EB" }) {
 }
 
 // ---------- Tambah Barang ----------
+
 function AddItemScreen({ route, navigation }) {
   const onDone = route.params?.onDone;
   const initialItem = route.params?.item || null;
-  const [editingItem, setEditingItem] = useState(initialItem);
   const [itemId, setItemId] = useState(initialItem?.id ?? null);
   const [name, setName] = useState(initialItem?.name ?? "");
   const [category, setCategory] = useState(initialItem?.category ?? "");
   const [price, setPrice] = useState(initialItem ? formatNumberInput(String(initialItem.price ?? "")) : "");
   const [stock, setStock] = useState(initialItem ? formatNumberInput(String(initialItem.stock ?? "")) : "");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    if (initialItem) setEditingItem(initialItem);
-  }, [initialItem?.id]);
-
-  useEffect(() => {
-    let isActive = true;
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      return () => { isActive = false; };
-    }
-    (async () => {
-      try {
-        setIsSearching(true);
-        const res = await exec(`
-          SELECT id, name, category, price, stock
-          FROM items
-          WHERE name LIKE ? OR IFNULL(category,'') LIKE ?
-          ORDER BY name
-          LIMIT 20
-        `, [`%${searchTerm.trim()}%`, `%${searchTerm.trim()}%`]);
-        if (!isActive) return;
-        const rows = [];
-        for (let i = 0; i < res.rows.length; i++) rows.push(res.rows.item(i));
-        setSearchResults(rows);
-      } catch (error) {
-        console.log("ITEM SEARCH ERROR:", error);
-      } finally {
-        if (isActive) setIsSearching(false);
-      }
-    })();
-    return () => { isActive = false; };
-  }, [searchTerm]);
-
-  useEffect(() => {
-    if (editingItem) {
-      setItemId(editingItem.id);
-      setName(editingItem.name || "");
-      setCategory(editingItem.category || "");
-      setPrice(formatNumberInput(String(editingItem.price ?? "")));
-      setStock(formatNumberInput(String(editingItem.stock ?? "")));
+    if (initialItem) {
+      setItemId(initialItem.id);
+      setName(initialItem.name || "");
+      setCategory(initialItem.category || "");
+      setPrice(formatNumberInput(String(initialItem.price ?? "")));
+      setStock(formatNumberInput(String(initialItem.stock ?? "")));
       navigation.setOptions({ title: "Edit Barang" });
     } else {
       resetForm();
-      navigation.setOptions({ title: "Tambah Barang" });
     }
-  }, [editingItem, navigation]);
+  }, [initialItem?.id, navigation]);
 
   function resetForm() {
     setItemId(null);
@@ -2242,12 +2389,7 @@ function AddItemScreen({ route, navigation }) {
     setCategory("");
     setPrice("");
     setStock("");
-  }
-
-  function startEditItem(item) {
-    setSearchTerm("");
-    setSearchResults([]);
-    setEditingItem(item);
+    navigation.setOptions({ title: "Tambah Barang" });
   }
 
   const isEdit = Boolean(itemId);
@@ -2274,40 +2416,6 @@ function AddItemScreen({ route, navigation }) {
     <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom:24 }}>
         <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
-        <View style={{ marginBottom:16 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Cari barang untuk diedit</Text>
-          <TextInput
-            placeholder="Cari nama atau kategori..."
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44 }}
-          />
-          {searchTerm.trim() ? (
-            <View style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E2E8F0", borderRadius:12, marginTop:8 }}>
-              {isSearching ? (
-                <View style={{ padding:16, alignItems:"center" }}>
-                  <ActivityIndicator color="#2563EB" />
-                </View>
-              ) : searchResults.length ? (
-                searchResults.map(item => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => startEditItem(item)}
-                    style={({ pressed }) => ({ paddingVertical:12, paddingHorizontal:16, backgroundColor: pressed ? "#F1F5F9" : "#fff", borderBottomWidth:1, borderBottomColor:"#E2E8F0" })}
-                  >
-                    <Text style={{ fontWeight:"600", color:"#0F172A" }}>{item.name}</Text>
-                    <Text style={{ color:"#64748B", fontSize:12 }}>{item.category || "Tanpa kategori"}</Text>
-                  </Pressable>
-                ))
-              ) : (
-                <View style={{ padding:16 }}>
-                  <Text style={{ color:"#94A3B8" }}>Tidak ada hasil.</Text>
-                </View>
-              )}
-            </View>
-          ) : null}
-        </View>
-
         <Input label="Nama" value={name} onChangeText={setName} />
         <Input label="Kategori" value={category} onChangeText={setCategory} />
         <Input label="Harga (Rp)" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
@@ -2316,7 +2424,7 @@ function AddItemScreen({ route, navigation }) {
           <Text style={{ color:"#fff", fontWeight:"700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
         </TouchableOpacity>
         {isEdit ? (
-          <TouchableOpacity onPress={() => setEditingItem(null)} style={{ marginTop:12, paddingVertical:12, borderRadius:12, alignItems:"center", borderWidth:1, borderColor:"#CBD5F5" }}>
+          <TouchableOpacity onPress={resetForm} style={{ marginTop:12, paddingVertical:12, borderRadius:12, alignItems:"center", borderWidth:1, borderColor:"#CBD5F5" }}>
             <Text style={{ color:"#2563EB", fontWeight:"600" }}>Buat Item Baru</Text>
           </TouchableOpacity>
         ) : null}
@@ -2363,31 +2471,88 @@ function StockMoveScreen({ route, navigation }) {
 }
 
 // ---------- History ----------
+
 function HistoryScreen() {
+  const PAGE_SIZE = 30;
   const [rows, setRows] = useState([]);
-  const [q, setQ] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
 
-  async function load() {
-    const res = await exec(`
-      SELECT h.id, h.type, h.qty, h.note, h.created_at, i.name
-      FROM stock_history h JOIN items i ON i.id = h.item_id
-      ORDER BY h.id DESC
-      LIMIT 400
-    `);
-    const arr = []; for (let i = 0; i < res.rows.length; i++) arr.push(res.rows.item(i));
-    setRows(arr);
+  useEffect(() => {
+    loadHistory({ search: searchTerm, reset: true });
+  }, []);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      loadHistory({ search: searchTerm, reset: true });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  async function loadHistory({ search = searchTerm, reset = false, mode = "default" } = {}) {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const res = await exec(
+        `
+          SELECT h.id, h.type, h.qty, h.note, h.created_at, i.name
+          FROM stock_history h JOIN items i ON i.id = h.item_id
+          WHERE (? = '' OR LOWER(i.name) LIKE ? OR LOWER(IFNULL(h.note,'')) LIKE ? OR LOWER(h.type) LIKE ?)
+          ORDER BY h.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [normalizedSearch, `%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`, limit, offset],
+      );
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageRows = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+        id: row.id,
+        type: row.type,
+        qty: Number(row.qty ?? 0),
+        note: row.note,
+        created_at: row.created_at,
+        name: row.name,
+      }));
+      const nextOffset = offset + pageRows.length;
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setRows(prev => (shouldReset ? pageRows : [...prev, ...pageRows]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
+    } catch (error) {
+      console.log("HISTORY LOAD ERROR:", error);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        if (mode === "refresh") setRefreshing(false);
+        else if (mode === "loadMore") setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
   }
-  useEffect(() => { load(); }, []);
 
-  const filteredRows = rows.filter(item => {
-    const query = q.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      item.name?.toLowerCase().includes(query) ||
-      (item.note || "").toLowerCase().includes(query) ||
-      item.type?.toLowerCase().includes(query)
-    );
-  });
+  const handleRefresh = () => loadHistory({ search: searchTerm, reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadHistory({ search: searchTerm, reset: false, mode: "loadMore" });
+    }
+  };
 
   const renderItem = ({ item }) => (
     <View style={{ backgroundColor:"#fff", padding:12, borderRadius:12, borderWidth:1, borderColor:"#E5E7EB", marginBottom:10 }}>
@@ -2403,14 +2568,41 @@ function HistoryScreen() {
       <Text style={{ fontSize:20, fontWeight:"700", marginBottom:12 }}>History</Text>
       <TextInput
         placeholder="Cari nama, catatan, atau tipe..."
-        value={q}
-        onChangeText={setQ}
+        value={searchTerm}
+        onChangeText={setSearchTerm}
         style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, height:44, marginBottom:12 }}
       />
-      <FlatList data={filteredRows} keyExtractor={it => String(it.id)} renderItem={renderItem} />
-      <TouchableOpacity onPress={load} style={{ marginTop:12, backgroundColor:"#2563EB", paddingVertical:12, borderRadius:12, alignItems:"center" }}>
-        <Text style={{ color:"#fff", fontWeight:"700" }}>Refresh</Text>
-      </TouchableOpacity>
+      <FlatList
+        data={rows}
+        keyExtractor={it => String(it.id)}
+        renderItem={renderItem}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={{ paddingVertical:16 }}>
+              <ActivityIndicator color="#2563EB" />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={{ paddingVertical:40 }}>
+              <ActivityIndicator color="#2563EB" />
+            </View>
+          ) : (
+            <View style={{ paddingVertical:40, alignItems:"center" }}>
+              <Ionicons name="time-outline" size={32} color="#CBD5F5" />
+              <Text style={{ color:"#94A3B8", marginTop:8 }}>
+                {searchTerm.trim() ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat stok."}
+              </Text>
+            </View>
+          )
+        }
+        contentContainerStyle={{ paddingBottom:32 }}
+      />
     </SafeAreaView>
   );
 }
