@@ -1,0 +1,18 @@
+
+-- Skema referensi
+CREATE TABLE IF NOT EXISTS items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT,
+  price INTEGER NOT NULL DEFAULT 0,
+  stock INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS stock_history(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY(item_id) REFERENCES items(id)
+);
