@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, ScrollView, RefreshControl, Modal, Pressable, ActivityIndicator, Dimensions, Platform } from "react-native";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, ScrollView, RefreshControl, Modal, Pressable, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { openDatabaseAsync } from "expo-sqlite";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator, useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useHeaderHeight } from "@react-navigation/elements";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
@@ -89,6 +90,49 @@ function buildPOFileBase(order) {
 }
 
 const DOWNLOAD_PREF_FILE = `${FileSystem.documentDirectory}po_download_dir.json`;
+
+const KEYBOARD_AVOIDING_BEHAVIOR =
+  Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined;
+
+function useFormKeyboardOffset(extraOffset = 0) {
+  const headerHeight = useHeaderHeight();
+  const platformOffset = Platform.OS === "android" ? 16 : 0;
+  return headerHeight + platformOffset + extraOffset;
+}
+
+function FormScrollContainer({
+  children,
+  contentContainerStyle,
+  keyboardShouldPersistTaps,
+  ...rest
+}) {
+  const keyboardOffset = useFormKeyboardOffset();
+  const baseContentStyle = {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 32,
+  };
+  const mergedContentStyle = Array.isArray(contentContainerStyle)
+    ? [baseContentStyle, ...contentContainerStyle]
+    : { ...baseContentStyle, ...(contentContainerStyle || {}) };
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={KEYBOARD_AVOIDING_BEHAVIOR}
+      keyboardVerticalOffset={keyboardOffset}
+    >
+      <ScrollView
+        {...rest}
+        keyboardShouldPersistTaps={keyboardShouldPersistTaps ?? "handled"}
+        contentContainerStyle={mergedContentStyle}
+      >
+        {children}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
 
 function describeSafDirectory(directoryUri) {
   if (!directoryUri) return null;
@@ -404,6 +448,8 @@ async function ensureDbReady() {
 // ---------- Dashboard ----------
 function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
+  const modalKeyboardOffset = Platform.OS === "ios" ? insets.bottom + 16 : 0;
   const [metrics, setMetrics] = useState({
     totalStock: 0,
     totalItems: 0,
@@ -1187,13 +1233,19 @@ function DashboardScreen({ navigation }) {
         onRequestClose={closeDetail}
       >
         <Pressable
-          style={{ flex:1, backgroundColor:"rgba(15,23,42,0.35)", padding:16, justifyContent:"flex-end" }}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", padding: 16 }}
           onPress={closeDetail}
         >
-          <Pressable
-            style={{ backgroundColor:"#fff", borderRadius:24, paddingHorizontal:20, paddingTop:12, paddingBottom:24, maxHeight:"75%" }}
-            onPress={event => event.stopPropagation()}
+          <KeyboardAvoidingView
+            behavior={KEYBOARD_AVOIDING_BEHAVIOR}
+            keyboardVerticalOffset={modalKeyboardOffset}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            pointerEvents="box-none"
           >
+            <Pressable
+              style={{ backgroundColor: "#fff", borderRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, maxHeight: "75%" }}
+              onPress={event => event.stopPropagation()}
+            >
             <View style={{ alignItems:"center", marginBottom:12 }}>
               <View style={{ width:42, height:4, borderRadius:999, backgroundColor:"#E2E8F0" }} />
             </View>
@@ -1291,7 +1343,8 @@ function DashboardScreen({ navigation }) {
                 <Text style={{ color:"#94A3B8", textAlign:"center" }}>Belum ada data untuk ditampilkan.</Text>
               </View>
             )}
-          </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>
@@ -1649,18 +1702,18 @@ function AddPurchaseOrderScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>Tambah Purchase Order</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Tambah Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
         <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
         <DatePickerField label="Tanggal" value={orderDate} onChange={setOrderDate} />
         <Input label="Qty" value={quantity} onChangeText={text => setQuantity(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Harga Satuan" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
-        <View style={{ marginBottom:12 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Status</Text>
-          <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {PO_STATUS_OPTIONS.map(option => {
               const active = option === status;
               return (
@@ -1692,10 +1745,10 @@ function AddPurchaseOrderScreen({ route, navigation }) {
             style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, paddingVertical:10, minHeight:80, textAlignVertical:"top" }}
           />
         </View>
-        <TouchableOpacity onPress={save} style={{ marginTop:8, backgroundColor:"#14B8A6", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>Simpan PO</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 8, backgroundColor: "#14B8A6", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan PO</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -1789,18 +1842,18 @@ function EditPurchaseOrderScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>Edit Purchase Order</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Edit Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
         <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
         <DatePickerField label="Tanggal" value={orderDate} onChange={setOrderDate} />
         <Input label="Qty" value={quantity} onChangeText={text => setQuantity(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Harga Satuan" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
-        <View style={{ marginBottom:12 }}>
-          <Text style={{ marginBottom:6, color:"#475569" }}>Status</Text>
-          <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {PO_STATUS_OPTIONS.map(option => {
               const active = option === status;
               return (
@@ -1832,10 +1885,10 @@ function EditPurchaseOrderScreen({ route, navigation }) {
             style={{ backgroundColor:"#fff", borderWidth:1, borderColor:"#E5E7EB", borderRadius:12, paddingHorizontal:12, paddingVertical:10, minHeight:80, textAlignVertical:"top" }}
           />
         </View>
-        <TouchableOpacity onPress={save} style={{ marginTop:8, backgroundColor:"#2563EB", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>Simpan Perubahan</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 8, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -2620,22 +2673,22 @@ function AddItemScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom:24 }}>
-        <Text style={{ fontSize:18, fontWeight:"700", marginBottom:12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
         <Input label="Nama" value={name} onChangeText={setName} />
         <Input label="Kategori" value={category} onChangeText={setCategory} />
         <Input label="Harga (Rp)" value={price} onChangeText={text => setPrice(formatNumberInput(text))} keyboardType="numeric" placeholder="0" />
         <Input label="Stok" value={stock} onChangeText={text => setStock(formatNumberInput(text))} keyboardType="numeric" />
-        <TouchableOpacity onPress={save} style={{ marginTop:16, backgroundColor:"#2563EB", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-          <Text style={{ color:"#fff", fontWeight:"700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
+        <TouchableOpacity onPress={save} style={{ marginTop: 16, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
         </TouchableOpacity>
         {isEdit ? (
-          <TouchableOpacity onPress={resetForm} style={{ marginTop:12, paddingVertical:12, borderRadius:12, alignItems:"center", borderWidth:1, borderColor:"#CBD5F5" }}>
-            <Text style={{ color:"#2563EB", fontWeight:"600" }}>Buat Item Baru</Text>
+          <TouchableOpacity onPress={resetForm} style={{ marginTop: 12, paddingVertical: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#CBD5F5" }}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Buat Item Baru</Text>
           </TouchableOpacity>
         ) : null}
-      </ScrollView>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
@@ -2664,15 +2717,19 @@ function StockMoveScreen({ route, navigation }) {
     onDone && onDone(); navigation.goBack();
   }
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:"#F8FAFC", padding:16 }}>
-      <Text style={{ fontSize:18, fontWeight:"700", marginBottom:6 }}>{mode === "IN" ? "Barang Masuk" : "Barang Keluar"}</Text>
-      <Text style={{ color:"#64748B" }}>{item.name} • Stok: {item.stock}</Text>
-      <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" />
-      <Input label="Catatan (opsional)" value={note} onChangeText={setNote} />
-      <TouchableOpacity onPress={commit}
-        style={{ marginTop:16, backgroundColor: mode === "IN" ? "#2563EB" : "#EF4444", paddingVertical:14, borderRadius:12, alignItems:"center" }}>
-        <Text style={{ color:"#fff", fontWeight:"700" }}>{mode === "IN" ? "Simpan Masuk" : "Simpan Keluar"}</Text>
-      </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 6 }}>{mode === "IN" ? "Barang Masuk" : "Barang Keluar"}</Text>
+        <Text style={{ color: "#64748B" }}>{item.name} • Stok: {item.stock}</Text>
+        <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" />
+        <Input label="Catatan (opsional)" value={note} onChangeText={setNote} />
+        <TouchableOpacity
+          onPress={commit}
+          style={{ marginTop: 16, backgroundColor: mode === "IN" ? "#2563EB" : "#EF4444", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>{mode === "IN" ? "Simpan Masuk" : "Simpan Keluar"}</Text>
+        </TouchableOpacity>
+      </FormScrollContainer>
     </SafeAreaView>
   );
 }
