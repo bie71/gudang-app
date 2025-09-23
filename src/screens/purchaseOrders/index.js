@@ -285,14 +285,14 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
           value={quantity}
           onChangeText={text => setQuantity(formatNumberInput(text))}
           keyboardType="numeric"
-          placeholder="0"
+          placeholder="contoh: 50"
         />
         <Input
           label="Harga Satuan"
           value={price}
           onChangeText={text => setPrice(formatNumberInput(text))}
           keyboardType="numeric"
-          placeholder="0"
+          placeholder="contoh: 125000"
         />
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <View style={{ marginBottom: 12 }}>
@@ -440,14 +440,14 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
           value={quantity}
           onChangeText={text => setQuantity(formatNumberInput(text))}
           keyboardType="numeric"
-          placeholder="0"
+          placeholder="contoh: 50"
         />
         <Input
           label="Harga Satuan"
           value={price}
           onChangeText={text => setPrice(formatNumberInput(text))}
           keyboardType="numeric"
-          placeholder="0"
+          placeholder="contoh: 125000"
         />
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <View style={{ marginBottom: 12 }}>
