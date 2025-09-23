@@ -670,7 +670,7 @@ export default function DashboardScreen({ navigation }) {
   const displayRecentPOs = recentPOs.slice(0, 5);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", marginBottom: -tabBarHeight }}>
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 24 + tabBarHeight }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor="#2563EB" />}
