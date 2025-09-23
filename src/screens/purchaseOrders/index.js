@@ -511,9 +511,25 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const invoicePreviewRef = useRef(null);
-  const previewWidth = Math.min(Dimensions.get("window").width - 48, 640);
   const actionHintTimeout = useRef(null);
   const [actionHint, setActionHint] = useState("");
+
+  const computeAmountAwareWidth = (baseWidth, maxWidth, values = []) => {
+    const base = Math.max(Math.round(baseWidth || 0), 0);
+    const safeMax = Math.max(Math.round(maxWidth || base), base);
+    const items = (values || [])
+      .map(value => (value == null ? "" : String(value)))
+      .filter(Boolean);
+    if (!items.length) return base;
+    const longest = items.reduce((len, text) => Math.max(len, text.length), 0);
+    const threshold = 11;
+    const perChar = 18;
+    if (longest <= threshold) {
+      return base;
+    }
+    const extraWidth = (longest - threshold) * perChar;
+    return Math.min(base + extraWidth, safeMax);
+  };
 
   async function load() {
     try {
@@ -602,19 +618,25 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       const totalFormatted = formatCurrencyValue(totalValue);
       const noteHtml = order.note ? escapeHtml(order.note).replace(/\n/g, "<br/>") : "";
       const statusStyle = getPOStatusStyle(order.status);
+      const cardWidth = computeAmountAwareWidth(640, 900, [priceFormatted, totalFormatted]);
       const html = `
         <html>
           <head>
             <meta charset="utf-8" />
             <style>
               body {
+                margin: 0;
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
                 padding: 32px;
                 color: #0f172a;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
               }
               .card {
-                max-width: 640px;
+                width: ${cardWidth}px;
+                max-width: 100%;
                 margin: 0 auto;
                 background: #fff;
                 border-radius: 24px;
@@ -663,6 +685,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 border-radius: 16px;
                 overflow: hidden;
                 margin-bottom: 24px;
+                table-layout: auto;
               }
               thead {
                 background: #f1f5f9;
@@ -675,11 +698,50 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 letter-spacing: 0.04em;
                 color: #475569;
               }
+              th.numeric {
+                text-align: right;
+              }
+              th.numeric--qty,
+              td.numeric--qty {
+                min-width: 96px;
+              }
+              th.numeric--price,
+              td.numeric--price {
+                min-width: 150px;
+              }
+              th.numeric--total,
+              td.numeric--total {
+                min-width: 170px;
+              }
               td {
                 padding: 16px;
                 border-bottom: 1px solid #e2e8f0;
                 font-size: 15px;
                 color: #0f172a;
+                vertical-align: top;
+              }
+              td.item {
+                width: 100%;
+              }
+              td.numeric {
+                display: flex;
+                justify-content: flex-end;
+                align-items: baseline;
+                gap: 8px;
+                white-space: nowrap;
+              }
+              td.numeric .value {
+                font-variant-numeric: tabular-nums;
+                font-weight: 500;
+              }
+              td.numeric .unit {
+                font-size: 12px;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+              }
+              td.numeric--total .value {
+                font-weight: 600;
               }
               tbody tr:last-child td {
                 border-bottom: none;
@@ -713,17 +775,24 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 <thead>
                   <tr>
                     <th>Barang</th>
-                    <th>Qty</th>
-                    <th>Harga</th>
-                    <th>Total</th>
+                    <th class="numeric numeric--qty">Qty</th>
+                    <th class="numeric numeric--price">Harga</th>
+                    <th class="numeric numeric--total">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>${escapeHtml(order.itemName)}</td>
-                    <td>${qtyFormatted} pcs</td>
-                    <td>${priceFormatted}</td>
-                    <td>${totalFormatted}</td>
+                    <td class="item">${escapeHtml(order.itemName)}</td>
+                    <td class="numeric numeric--qty">
+                      <span class="value">${qtyFormatted}</span>
+                      <span class="unit">pcs</span>
+                    </td>
+                    <td class="numeric numeric--price">
+                      <span class="value">${priceFormatted}</span>
+                    </td>
+                    <td class="numeric numeric--total">
+                      <span class="value">${totalFormatted}</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -825,6 +894,12 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
 
   const totalValue = order.quantity * order.price;
   const statusStyle = getPOStatusStyle(order.status);
+  const quantityDisplay = formatNumberValue(order.quantity);
+  const priceDisplay = formatCurrencyValue(order.price);
+  const totalDisplay = formatCurrencyValue(totalValue);
+  const windowWidth = Dimensions.get("window").width;
+  const previewBaseWidth = Math.max(windowWidth - 48, 640);
+  const previewWidth = computeAmountAwareWidth(previewBaseWidth, 900, [priceDisplay, totalDisplay]);
 
   const actionButtons = [
     {
@@ -935,17 +1010,77 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         <Text style={{ color: "#64748B", marginTop: 4 }}>Tanggal: {formatDateDisplay(order.orderDate)}</Text>
       </View>
       <View style={{ borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" }}>
-        <View style={{ flexDirection: "row", backgroundColor: "#F1F5F9", paddingVertical: 10, paddingHorizontal: 12 }}>
-          <Text style={{ flex: 3, fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
-          <Text style={{ flex: 1, fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
-          <Text style={{ flex: 1.2, fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
-          <Text style={{ flex: 1.2, fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+        <View
+          style={{
+            flexDirection: "row",
+            backgroundColor: "#F1F5F9",
+            paddingVertical: 10,
+            paddingHorizontal: 12,
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={{ fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
+          </View>
+          <View style={{ minWidth: 96, alignItems: "flex-end", flexShrink: 0 }}>
+            <Text style={{ fontWeight: "600", color: "#475569" }}>Qty</Text>
+          </View>
+          <View style={{ minWidth: 150, alignItems: "flex-end", flexShrink: 0 }}>
+            <Text style={{ fontWeight: "600", color: "#475569" }}>Harga</Text>
+          </View>
+          <View style={{ minWidth: 170, alignItems: "flex-end", flexShrink: 0 }}>
+            <Text style={{ fontWeight: "600", color: "#475569" }}>Total</Text>
+          </View>
         </View>
-        <View style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, alignItems: "center" }}>
-          <Text style={{ flex: 3, color: "#0F172A" }}>{order.itemName}</Text>
-          <Text style={{ flex: 1, color: "#0F172A", textAlign: "right" }}>{formatNumberValue(order.quantity)} pcs</Text>
-          <Text style={{ flex: 1.2, color: "#0F172A", textAlign: "right" }}>{formatCurrencyValue(order.price)}</Text>
-          <Text style={{ flex: 1.2, color: "#0F172A", fontWeight: "600", textAlign: "right" }}>{formatCurrencyValue(totalValue)}</Text>
+        <View
+          style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, alignItems: "center" }}
+        >
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={{ color: "#0F172A" }}>{order.itemName}</Text>
+          </View>
+          <View
+            style={{
+              minWidth: 96,
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              alignItems: "baseline",
+              flexShrink: 0,
+            }}
+          >
+            <Text
+              style={{
+                color: "#0F172A",
+                fontVariant: ["tabular-nums"],
+                fontWeight: "600",
+              }}
+            >
+              {quantityDisplay}
+            </Text>
+            <Text
+              style={{
+                color: "#94A3B8",
+                fontSize: 12,
+                marginLeft: 4,
+                textTransform: "uppercase",
+                letterSpacing: 0.08,
+              }}
+            >
+              pcs
+            </Text>
+          </View>
+          <View style={{ minWidth: 150, alignItems: "flex-end", flexShrink: 0 }}>
+            <Text style={{ color: "#0F172A", fontVariant: ["tabular-nums"] }}>{priceDisplay}</Text>
+          </View>
+          <View style={{ minWidth: 170, alignItems: "flex-end", flexShrink: 0 }}>
+            <Text
+              style={{
+                color: "#0F172A",
+                fontVariant: ["tabular-nums"],
+                fontWeight: "600",
+              }}
+            >
+              {totalDisplay}
+            </Text>
+          </View>
         </View>
       </View>
       {order.note ? (
@@ -974,9 +1109,9 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             <DetailRow label="Pemasok" value={order.supplierName || "-"} />
             <DetailRow label="Pemesan" value={order.ordererName || "-"} />
             <DetailRow label="Tanggal PO" value={formatDateDisplay(order.orderDate)} />
-            <DetailRow label="Qty" value={`${formatNumberValue(order.quantity)} pcs`} />
-            <DetailRow label="Harga Satuan" value={formatCurrencyValue(order.price)} />
-            <DetailRow label="Nilai Total" value={formatCurrencyValue(totalValue)} bold />
+            <DetailRow label="Qty" value={`${quantityDisplay} pcs`} />
+            <DetailRow label="Harga Satuan" value={priceDisplay} />
+            <DetailRow label="Nilai Total" value={totalDisplay} bold />
             <DetailRow label="Dibuat" value={formatDateDisplay(order.createdAt)} />
             <DetailRow label="Catatan" value={order.note || "-"} multiline />
           </View>
