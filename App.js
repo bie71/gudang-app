@@ -1,5 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, ScrollView, RefreshControl, Modal, Pressable, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Alert,
+  ScrollView,
+  RefreshControl,
+  Modal,
+  Pressable,
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  KeyboardAvoidingView,
+  Keyboard,
+} from "react-native";
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { openDatabaseAsync } from "expo-sqlite";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -107,11 +123,31 @@ function FormScrollContainer({
   ...rest
 }) {
   const keyboardOffset = useFormKeyboardOffset();
+  const insets = useSafeAreaInsets();
+  const [keyboardSpace, setKeyboardSpace] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios" && Platform.OS !== "android") return undefined;
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, event => {
+      const height = event?.endCoordinates?.height ?? 0;
+      const adjustedHeight = Math.max(0, height - insets.bottom);
+      setKeyboardSpace(adjustedHeight);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardSpace(0));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, [insets.bottom]);
+
+  const extraBottomSpacing = keyboardSpace > 0 ? keyboardSpace + 24 : 0;
   const baseContentStyle = {
     flexGrow: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 32,
+    paddingBottom: 32 + insets.bottom + extraBottomSpacing,
   };
   const mergedContentStyle = Array.isArray(contentContainerStyle)
     ? [baseContentStyle, ...contentContainerStyle]
@@ -126,6 +162,7 @@ function FormScrollContainer({
       <ScrollView
         {...rest}
         keyboardShouldPersistTaps={keyboardShouldPersistTaps ?? "handled"}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         contentContainerStyle={mergedContentStyle}
       >
         {children}
@@ -1231,6 +1268,7 @@ function DashboardScreen({ navigation }) {
         transparent
         animationType="fade"
         onRequestClose={closeDetail}
+        statusBarTranslucent
       >
         <Pressable
           style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", padding: 16 }}
