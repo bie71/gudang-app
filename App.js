@@ -114,51 +114,119 @@ async function setSavedDownloadDir(directoryUri) {
 }
 
 async function saveFileToStorage(tempUri, fileName, mimeType) {
-  try {
-    const hasSAF =
-      Platform.OS === 'android' &&
-      FileSystem.StorageAccessFramework &&
-      typeof FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync === 'function';
-
-    if (hasSAF) {
-      let directoryUri = await getSavedDownloadDir();
-      try {
-        if (!directoryUri) {
-          const DOWNLOADS_URI = 'content://com.android.externalstorage.documents/tree/primary%3ADownload';
-          let permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(DOWNLOADS_URI);
-          if (!permissions.granted) {
-            permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-          }
-          if (permissions.granted) {
-            directoryUri = permissions.directoryUri;
-            await setSavedDownloadDir(directoryUri);
-          }
-        }
-        if (directoryUri) {
-          const base64 = await FileSystem.readAsStringAsync(tempUri, { encoding: FileSystem.EncodingType.Base64 });
-          let destUri;
-          try {
-            destUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName, mimeType);
-          } catch (createError) {
-            console.log('SAF CREATE FILE ERROR:', createError);
-            await setSavedDownloadDir(null);
-          }
-          if (destUri) {
-            await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, { encoding: FileSystem.EncodingType.Base64 });
-            return destUri;
-          }
-        }
-      } catch (error) {
-        console.log('SAF PERMISSION ERROR:', error);
-      }
+  const copyToDocumentDirectory = async () => {
+    if (!FileSystem.documentDirectory) {
+      throw new Error('DOCUMENT_DIRECTORY_UNAVAILABLE');
     }
     const destPath = `${FileSystem.documentDirectory}${fileName}`;
+    try {
+      await FileSystem.deleteAsync(destPath, { idempotent: true });
+    } catch (error) {
+      if (error?.message) {
+        console.log('DELETE TEMP FILE ERROR:', error);
+      }
+    }
     await FileSystem.copyAsync({ from: tempUri, to: destPath });
     return destPath;
+  };
+
+  const hasSAF =
+    Platform.OS === 'android' &&
+    FileSystem.StorageAccessFramework &&
+    typeof FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync === 'function';
+
+  if (hasSAF) {
+    let directoryUri = await getSavedDownloadDir();
+    if (!directoryUri) {
+      try {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (permissions.granted) {
+          directoryUri = permissions.directoryUri;
+          await setSavedDownloadDir(directoryUri);
+        } else {
+          const fallbackUri = await copyToDocumentDirectory();
+          return {
+            uri: fallbackUri,
+            location: 'internal',
+            notice: 'Perangkat tidak mengizinkan memilih folder penyimpanan eksternal.',
+          };
+        }
+      } catch (permissionError) {
+        console.log('SAF PERMISSION ERROR:', permissionError);
+        const fallbackUri = await copyToDocumentDirectory();
+        return {
+          uri: fallbackUri,
+          location: 'internal',
+          notice: 'Gagal membuka pemilih folder. File disimpan di folder aplikasi.',
+        };
+      }
+    }
+
+    if (directoryUri) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(tempUri, { encoding: FileSystem.EncodingType.Base64 });
+        const destUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName, mimeType);
+        await FileSystem.StorageAccessFramework.writeAsStringAsync(destUri, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        return { uri: destUri, location: 'external', notice: null };
+      } catch (saveError) {
+        console.log('SAF SAVE ERROR:', saveError);
+        await setSavedDownloadDir(null);
+        const fallbackUri = await copyToDocumentDirectory();
+        return {
+          uri: fallbackUri,
+          location: 'internal',
+          notice: 'Tidak dapat menyimpan ke folder yang dipilih. File disimpan di folder aplikasi.',
+        };
+      }
+    }
+  }
+
+  try {
+    const fallbackUri = await copyToDocumentDirectory();
+    return {
+      uri: fallbackUri,
+      location: 'internal',
+      notice:
+        Platform.OS === 'android' && !hasSAF
+          ? 'Perangkat tidak mendukung pemilihan folder eksternal. File disimpan di folder aplikasi.'
+          : null,
+    };
   } catch (error) {
     console.log('SAVE FILE ERROR:', error);
-    return tempUri;
+    return { uri: tempUri, location: 'unknown', notice: 'Gagal memindahkan file ke folder aplikasi.' };
   }
+}
+
+async function resolveShareableUri(fileName, ...candidates) {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'string') continue;
+    if (candidate.startsWith('file://')) return candidate;
+    if (candidate.startsWith('/')) return `file://${candidate}`;
+  }
+
+  const contentCandidate = candidates.find(uri => typeof uri === 'string' && uri.startsWith('content://'));
+  if (
+    contentCandidate &&
+    FileSystem.StorageAccessFramework &&
+    typeof FileSystem.StorageAccessFramework.readAsStringAsync === 'function'
+  ) {
+    try {
+      const base64 = await FileSystem.StorageAccessFramework.readAsStringAsync(contentCandidate, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const cacheRoot = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!cacheRoot) return null;
+      const sharePath = `${cacheRoot}${fileName}`;
+      await FileSystem.writeAsStringAsync(sharePath, base64, { encoding: FileSystem.EncodingType.Base64 });
+      return sharePath;
+    } catch (error) {
+      console.log('CONTENT SHARE ERROR:', error);
+    }
+  }
+
+  return null;
 }
 
 async function exec(sql, params = []) {
@@ -1924,11 +1992,32 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
         </html>
       `;
       const { uri } = await Print.printToFileAsync({ html, base64: false, fileName: fileBaseName });
-      const savedUri = await saveFileToStorage(uri, `${fileBaseName}.pdf`, 'application/pdf');
+      const { uri: savedUri, location: savedLocation, notice: savedNotice } = await saveFileToStorage(
+        uri,
+        `${fileBaseName}.pdf`,
+        'application/pdf'
+      );
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(savedUri, { mimeType: 'application/pdf', dialogTitle: 'Bagikan Invoice Purchase Order', UTI: 'com.adobe.pdf' });
+        const resolvedShareUri = await resolveShareableUri(
+          `${fileBaseName}-share.pdf`,
+          uri,
+          savedUri
+        );
+        if (resolvedShareUri) {
+          await Sharing.shareAsync(resolvedShareUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Bagikan Invoice Purchase Order',
+            UTI: 'com.adobe.pdf',
+          });
+        } else {
+          console.log('SHARE URI NOT AVAILABLE FOR PDF');
+        }
       }
-      Alert.alert('Invoice Disimpan', savedUri.startsWith('content://') ? 'File tersimpan di folder yang kamu pilih.' : `File tersimpan di ${savedUri}`);
+      const locationMessage = savedLocation === 'external'
+        ? 'File tersimpan di folder yang kamu pilih.'
+        : `File tersimpan di ${savedUri}`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert('Invoice Disimpan', alertMessage);
     } catch (error) {
       console.log('PO PDF ERROR:', error);
       Alert.alert('Gagal', 'Invoice tidak dapat dibuat saat ini.');
@@ -1945,12 +2034,33 @@ function PurchaseOrderDetailScreen({ route, navigation }) {
         format: 'png',
         quality: 1,
       });
-      const fileName = `${buildPOFileBase(order)}.png`;
-      const savedUri = await saveFileToStorage(tempUri, fileName, 'image/png');
+      const fileBaseName = buildPOFileBase(order);
+      const fileName = `${fileBaseName}.png`;
+      const { uri: savedUri, location: savedLocation, notice: savedNotice } = await saveFileToStorage(
+        tempUri,
+        fileName,
+        'image/png'
+      );
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(savedUri, { mimeType: 'image/png', dialogTitle: 'Bagikan Invoice PO (PNG)' });
+        const resolvedShareUri = await resolveShareableUri(
+          `${fileBaseName}-share.png`,
+          tempUri,
+          savedUri
+        );
+        if (resolvedShareUri) {
+          await Sharing.shareAsync(resolvedShareUri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Bagikan Invoice PO (PNG)',
+          });
+        } else {
+          console.log('SHARE URI NOT AVAILABLE FOR IMAGE');
+        }
       }
-      Alert.alert('Gambar Disimpan', savedUri.startsWith('content://') ? 'File tersimpan di folder yang kamu pilih.' : `File tersimpan di ${savedUri}`);
+      const locationMessage = savedLocation === 'external'
+        ? 'File tersimpan di folder yang kamu pilih.'
+        : `File tersimpan di ${savedUri}`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert('Gambar Disimpan', alertMessage);
     } catch (error) {
       console.log('PO IMAGE ERROR:', error);
       Alert.alert('Gagal', 'Gambar invoice tidak dapat dibuat.');
