@@ -67,10 +67,10 @@ const ITEM_TABLE_ROW_DIVIDER = {
 };
 
 const ITEM_TABLE_COLUMNS = {
-  name: { flexGrow: 1, flexShrink: 0, flexBasis: 240, paddingRight: 12, minWidth: 220 },
-  qty: { flexGrow: 0, flexShrink: 0, flexBasis: 110, alignItems: "flex-end", minWidth: 110 },
-  price: { flexGrow: 0, flexShrink: 0, flexBasis: 150, alignItems: "flex-end", minWidth: 150 },
-  total: { flexGrow: 0, flexShrink: 0, flexBasis: 160, alignItems: "flex-end", minWidth: 160 },
+  name: { flexGrow: 1, flexShrink: 1, flexBasis: 296, paddingRight: 16, minWidth: 280 },
+  qty: { flexGrow: 0, flexShrink: 0, flexBasis: 96, alignItems: "flex-end", minWidth: 96 },
+  price: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 120 },
+  total: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 120 },
 };
 
 const ITEM_TABLE_NUMERIC_TEXT = {
@@ -78,6 +78,7 @@ const ITEM_TABLE_NUMERIC_TEXT = {
   fontVariant: ["tabular-nums"],
   textAlign: "right",
   flexShrink: 1,
+  minWidth: 0,
 };
 
 const ITEM_TABLE_NUMERIC_TEXT_STRONG = {
@@ -90,12 +91,14 @@ const ITEM_TABLE_QTY_CONTAINER = {
   alignItems: "baseline",
   justifyContent: "flex-end",
   flexWrap: "wrap",
+  gap: 6,
+  minWidth: 0,
 };
 
 const ITEM_TABLE_QTY_UNIT_TEXT = {
   color: "#94A3B8",
   fontSize: 12,
-  marginLeft: 4,
+  marginLeft: 6,
   textTransform: "uppercase",
   letterSpacing: 0.08,
   flexShrink: 0,
@@ -1034,14 +1037,20 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                   <tr>
                     <td class="item col-item">${escapeHtml(item.name || '-')}</td>
                     <td class="numeric numeric--qty col-qty">
-                      <span class="value">${qtyFormatted}</span>
-                      <span class="unit">pcs</span>
+                      <div class="numeric__content">
+                        <span class="value">${qtyFormatted}</span>
+                        <span class="unit">pcs</span>
+                      </div>
                     </td>
                     <td class="numeric numeric--price col-price">
-                      <span class="value">${priceFormatted}</span>
+                      <div class="numeric__content">
+                        <span class="value">${priceFormatted}</span>
+                      </div>
                     </td>
                     <td class="numeric numeric--total col-total">
-                      <span class="value">${rowTotalFormatted}</span>
+                      <div class="numeric__content">
+                        <span class="value">${rowTotalFormatted}</span>
+                      </div>
                     </td>
                   </tr>`;
         })
@@ -1113,7 +1122,17 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 border-radius: 16px;
                 overflow: hidden;
                 margin-bottom: 24px;
-                table-layout: auto;
+                table-layout: fixed;
+              }
+              col.col-item {
+                width: 46%;
+              }
+              col.col-qty {
+                width: 14%;
+              }
+              col.col-price,
+              col.col-total {
+                width: 20%;
               }
               thead {
                 background: #f1f5f9;
@@ -1156,28 +1175,31 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 word-break: break-word;
               }
               td.numeric {
-                display: flex;
-                justify-content: flex-end;
-                align-items: baseline;
-                flex-wrap: wrap;
+                text-align: right;
                 font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+              }
+              td.numeric .numeric__content {
+                display: inline-flex;
+                align-items: baseline;
+                justify-content: flex-end;
+                gap: 6px;
+                min-width: 0;
+                width: 100%;
               }
               td.numeric .value {
                 font-weight: 500;
                 text-align: right;
-                flex: 0 1 auto;
                 min-width: 0;
               }
               td.numeric--qty .value {
                 font-weight: 600;
               }
               td.numeric .unit {
-                margin-left: 6px;
                 font-size: 12px;
                 color: #94a3b8;
                 text-transform: uppercase;
                 letter-spacing: 0.08em;
-                flex: 0 0 auto;
               }
               td.numeric--total .value {
                 font-weight: 600;
@@ -1213,6 +1235,12 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 <p><strong>Nilai Total</strong>${totalFormatted}</p>
               </div>
               <table>
+                <colgroup>
+                  <col class="col-item" />
+                  <col class="col-qty" />
+                  <col class="col-price" />
+                  <col class="col-total" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th class="col-item">Barang</th>
@@ -1491,7 +1519,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
               >
                 <View style={ITEM_TABLE_COLUMNS.name}>
-                  <Text style={{ color: "#0F172A", flexShrink: 0 }}>{item.name || "-"}</Text>
+                  <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
                 </View>
                 <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
                   <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
@@ -1568,7 +1596,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                       style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
                     >
                       <View style={ITEM_TABLE_COLUMNS.name}>
-                        <Text style={{ color: "#0F172A", flexShrink: 0 }}>{item.name || "-"}</Text>
+                        <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
                       </View>
                       <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
                         <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>

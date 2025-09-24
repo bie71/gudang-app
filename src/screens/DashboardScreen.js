@@ -550,17 +550,16 @@ export default function DashboardScreen({ navigation }) {
         }
         const itemRow = res.rows.item(0);
         closeDetail();
-        navigation.navigate("AddItem", {
-          item: {
+        navigation.navigate("ItemDetail", {
+          itemId: itemRow.id,
+          initialItem: {
             id: itemRow.id,
             name: itemRow.name,
             category: itemRow.category,
             price: Number(itemRow.price ?? 0),
             stock: Number(itemRow.stock ?? 0),
           },
-          onDone: () => {
-            load();
-          },
+          onDone: load,
         });
       } catch (error) {
         console.log("ITEM DETAIL OPEN ERROR:", error);
