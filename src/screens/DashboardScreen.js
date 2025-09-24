@@ -23,6 +23,7 @@ import { CATEGORY_COLORS, getPOStatusStyle } from "../constants";
 import { formatCurrencyValue, formatDateDisplay, formatNumberValue } from "../utils/format";
 import { exec } from "../services/database";
 import { KEYBOARD_AVOIDING_BEHAVIOR } from "../components/FormScrollContainer";
+import { buildOrderItemLabel } from "../utils/purchaseOrders";
 
 export default function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
@@ -105,26 +106,51 @@ export default function DashboardScreen({ navigation }) {
       description: "Riwayat purchase order terbaru.",
       buildQuery: (search, limit, offset) => ({
         sql: `
-          SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
-          FROM purchase_orders
-          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
-          ORDER BY order_date DESC, id DESC
+          SELECT
+            po.id,
+            po.orderer_name,
+            po.supplier_name,
+            po.status,
+            po.order_date,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE (
+            ? = ''
+            OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.note,'')) LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM purchase_order_items search_items
+              WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+            )
+          )
+          GROUP BY po.id
+          ORDER BY po.order_date DESC, po.id DESC
           LIMIT ? OFFSET ?
         `,
-        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
+        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
-        const qty = Number(row.quantity ?? 0);
-        const price = Number(row.price ?? 0);
-        const totalValue = qty * price;
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const itemCount = Number(row.item_count ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
         const orderer = row.orderer_name ? row.orderer_name : "Tanpa pemesan";
         const statusLabel = getPOStatusStyle(row.status).label;
         return {
           key: String(row.id),
-          title: row.item_name,
+          title: itemName,
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
-          trailingSecondary: `${formatNumberValue(qty)} pcs @ ${formatCurrencyValue(price)}`,
+          trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
         };
       },
     },
@@ -133,27 +159,52 @@ export default function DashboardScreen({ navigation }) {
       description: "Purchase order yang masih dalam proses.",
       buildQuery: (search, limit, offset) => ({
         sql: `
-          SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
-          FROM purchase_orders
-          WHERE status = 'PROGRESS'
-            AND (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
-          ORDER BY order_date ASC, id ASC
+          SELECT
+            po.id,
+            po.orderer_name,
+            po.supplier_name,
+            po.status,
+            po.order_date,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE po.status = 'PROGRESS'
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.note,'')) LIKE ?
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items search_items
+                WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+              )
+            )
+          GROUP BY po.id
+          ORDER BY po.order_date ASC, po.id ASC
           LIMIT ? OFFSET ?
         `,
-        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
+        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
-        const qty = Number(row.quantity ?? 0);
-        const price = Number(row.price ?? 0);
-        const totalValue = qty * price;
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const itemCount = Number(row.item_count ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
         const orderer = row.orderer_name ? row.orderer_name : "Tanpa pemesan";
         const statusLabel = getPOStatusStyle(row.status).label;
         return {
           key: String(row.id),
-          title: row.item_name,
+          title: itemName,
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
-          trailingSecondary: `${formatNumberValue(qty)} pcs @ ${formatCurrencyValue(price)}`,
+          trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
         };
       },
     },
@@ -162,26 +213,51 @@ export default function DashboardScreen({ navigation }) {
       description: "PO dengan nilai transaksi tertinggi.",
       buildQuery: (search, limit, offset) => ({
         sql: `
-          SELECT id, orderer_name, supplier_name, item_name, quantity, price, status, order_date
-          FROM purchase_orders
-          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ?)
-          ORDER BY (quantity * price) DESC, order_date DESC
+          SELECT
+            po.id,
+            po.orderer_name,
+            po.supplier_name,
+            po.status,
+            po.order_date,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE (
+            ? = ''
+            OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.note,'')) LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM purchase_order_items search_items
+              WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+            )
+          )
+          GROUP BY po.id
+          ORDER BY total_value DESC, po.order_date DESC, po.id DESC
           LIMIT ? OFFSET ?
         `,
-        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
+        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
-        const qty = Number(row.quantity ?? 0);
-        const price = Number(row.price ?? 0);
-        const totalValue = qty * price;
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const itemCount = Number(row.item_count ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
         const orderer = row.orderer_name ? row.orderer_name : "Tanpa pemesan";
         const statusLabel = getPOStatusStyle(row.status).label;
         return {
           key: String(row.id),
-          title: row.item_name,
+          title: itemName,
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
-          trailingSecondary: `${formatNumberValue(qty)} pcs @ ${formatCurrencyValue(price)}`,
+          trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
         };
       },
     },
@@ -234,15 +310,38 @@ export default function DashboardScreen({ navigation }) {
       const poSummaryRes = await exec(`
         SELECT
           COUNT(*) as totalOrders,
-          IFNULL(SUM(quantity),0) as totalQuantity,
-          IFNULL(SUM(quantity * price),0) as totalValue,
+          IFNULL(SUM(total_quantity), 0) as totalQuantity,
+          IFNULL(SUM(total_value), 0) as totalValue,
           SUM(CASE WHEN status = 'PROGRESS' THEN 1 ELSE 0 END) as progressOrders
-        FROM purchase_orders
+        FROM (
+          SELECT
+            po.id,
+            po.status,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          GROUP BY po.id
+        ) aggregated
       `);
       const recentPoRes = await exec(`
-        SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date
-        FROM purchase_orders
-        ORDER BY order_date DESC, id DESC
+        SELECT
+          po.id,
+          po.supplier_name,
+          po.orderer_name,
+          po.status,
+          po.order_date,
+          IFNULL(SUM(items.quantity), 0) as total_quantity,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+          COUNT(items.id) as item_count,
+          COALESCE(
+            (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+            ''
+          ) as primary_item_name
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        GROUP BY po.id
+        ORDER BY po.order_date DESC, po.id DESC
         LIMIT 5
       `);
 
@@ -278,13 +377,20 @@ export default function DashboardScreen({ navigation }) {
       const nextRecentPOs = [];
       for (let i = 0; i < recentPoRes.rows.length; i++) {
         const row = recentPoRes.rows.item(i);
+        const itemCount = Number(row.item_count ?? 0);
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
         nextRecentPOs.push({
           id: row.id,
           supplierName: row.supplier_name,
           ordererName: row.orderer_name,
-          itemName: row.item_name,
-          quantity: Number(row.quantity ?? 0),
-          price: Number(row.price ?? 0),
+          itemName,
+          primaryItemName,
+          itemsCount: itemCount,
+          totalQuantity,
+          totalValue,
           status: row.status,
           orderDate: row.order_date,
         });
@@ -884,7 +990,9 @@ export default function DashboardScreen({ navigation }) {
             </View>
             {recentPOs.length ? (
               displayRecentPOs.map((po, index) => {
-                const totalValue = po.quantity * po.price;
+                const totalValue = Number(po.totalValue ?? 0);
+                const totalQuantity = Number(po.totalQuantity ?? 0);
+                const itemsCount = Number(po.itemsCount ?? 0);
                 const statusStyle = getPOStatusStyle(po.status);
                 return (
                   <View
@@ -916,7 +1024,7 @@ export default function DashboardScreen({ navigation }) {
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(totalValue)}</Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${formatNumber(po.quantity)} pcs`}</Text>
+                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${formatNumber(itemsCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumber(totalQuantity)} pcs`}</Text>
                     </View>
                   </View>
                 );
