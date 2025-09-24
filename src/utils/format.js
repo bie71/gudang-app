@@ -57,3 +57,10 @@ export function buildPOFileBase(order) {
   const dateSlug = safeSlug(formatDateInputValue(new Date()));
   return `${ordererSlug}_${itemSlug}_${dateSlug}`;
 }
+
+export function buildBookkeepingReportFileBase(range = {}) {
+  const todaySlug = safeSlug(formatDateInputValue(new Date()));
+  const startSlug = range.startDate ? safeSlug(range.startDate) : todaySlug;
+  const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
+  return `laporan-pembukuan_${startSlug}_sd_${endSlug}`;
+}

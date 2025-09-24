@@ -51,10 +51,20 @@ export async function ensureDbReady() {
         "price INTEGER NOT NULL DEFAULT 0," +
         "FOREIGN KEY(order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE" +
         ");";
+      const createBookkeepingSql =
+        "CREATE TABLE IF NOT EXISTS bookkeeping_entries (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "name TEXT NOT NULL," +
+        "amount INTEGER NOT NULL DEFAULT 0," +
+        "entry_date TEXT NOT NULL," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
+        ");";
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
       await db.execAsync(createPurchaseOrderSql);
       await db.execAsync(createPurchaseOrderItemsSql);
+      await db.execAsync(createBookkeepingSql);
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
       } catch (error) {

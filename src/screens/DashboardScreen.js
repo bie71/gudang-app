@@ -40,10 +40,13 @@ export default function DashboardScreen({ navigation }) {
     poCount: 0,
     poProgress: 0,
     poTotalValue: 0,
+    bookkeepingCount: 0,
+    bookkeepingTotal: 0,
   });
   const [categoryStats, setCategoryStats] = useState([]);
   const [topItems, setTopItems] = useState([]);
   const [recentPOs, setRecentPOs] = useState([]);
+  const [recentBookkeeping, setRecentBookkeeping] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [detailModal, setDetailModal] = useState({ visible: false, title: "", description: "", rows: [], type: null });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -275,6 +278,34 @@ export default function DashboardScreen({ navigation }) {
         };
       },
     },
+    bookkeepingFull: {
+      title: "Semua Pembukuan",
+      description: "Daftar lengkap catatan pembukuan.",
+      buildQuery: (search, limit, offset) => ({
+        sql: `
+          SELECT id, name, amount, entry_date, note
+          FROM bookkeeping_entries
+          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
+          ORDER BY entry_date DESC, id DESC
+          LIMIT ? OFFSET ?
+        `,
+        params: [search, `%${search}%`, `%${search}%`, limit + 1, offset],
+      }),
+      mapRow: row => {
+        const entryId = Number(row.id);
+        const noteText = row.note && String(row.note).trim() ? String(row.note) : "";
+        const dateDisplay = formatDateDisplay(row.entry_date);
+        const subtitle = noteText ? `${dateDisplay} • ${noteText}` : dateDisplay;
+        return {
+          key: String(row.id),
+          title: row.name,
+          subtitle,
+          trailingPrimary: formatCurrencyValue(row.amount),
+          entityType: Number.isFinite(entryId) ? "bookkeeping" : undefined,
+          entityId: Number.isFinite(entryId) ? entryId : null,
+        };
+      },
+    },
   };
 
   const isPaginatedType = type => Boolean(type && PAGINATED_CONFIG[type]);
@@ -358,10 +389,25 @@ export default function DashboardScreen({ navigation }) {
         ORDER BY po.order_date DESC, po.id DESC
         LIMIT 5
       `);
+      const bookkeepingSummaryRes = await exec(`
+        SELECT
+          COUNT(*) as totalEntries,
+          IFNULL(SUM(amount), 0) as totalAmount
+        FROM bookkeeping_entries
+      `);
+      const recentBookkeepingRes = await exec(`
+        SELECT id, name, amount, entry_date, note
+        FROM bookkeeping_entries
+        ORDER BY entry_date DESC, id DESC
+        LIMIT 5
+      `);
 
       const summaryRow = summaryRes.rows.length ? summaryRes.rows.item(0) : {};
       const outRow = outRes.rows.length ? outRes.rows.item(0) : {};
       const poSummaryRow = poSummaryRes.rows.length ? poSummaryRes.rows.item(0) : {};
+      const bookkeepingSummaryRow = bookkeepingSummaryRes.rows.length
+        ? bookkeepingSummaryRes.rows.item(0)
+        : {};
 
       const nextCategoryStats = [];
       for (let i = 0; i < categoryRes.rows.length; i++) {
@@ -410,9 +456,22 @@ export default function DashboardScreen({ navigation }) {
         });
       }
 
+      const nextRecentBookkeeping = [];
+      for (let i = 0; i < recentBookkeepingRes.rows.length; i++) {
+        const row = recentBookkeepingRes.rows.item(i);
+        nextRecentBookkeeping.push({
+          id: row.id,
+          name: row.name,
+          amount: Number(row.amount ?? 0),
+          entryDate: row.entry_date,
+          note: row.note,
+        });
+      }
+
       setCategoryStats(nextCategoryStats);
       setTopItems(nextTopItems);
       setRecentPOs(nextRecentPOs);
+      setRecentBookkeeping(nextRecentBookkeeping);
       setMetrics({
         totalStock: Number(summaryRow.totalStock ?? 0),
         totalItems: Number(summaryRow.totalItems ?? 0),
@@ -424,6 +483,8 @@ export default function DashboardScreen({ navigation }) {
         poCount: Number(poSummaryRow.totalOrders ?? 0),
         poProgress: Number(poSummaryRow.progressOrders ?? 0),
         poTotalValue: Number(poSummaryRow.totalValue ?? 0),
+        bookkeepingCount: Number(bookkeepingSummaryRow.totalEntries ?? 0),
+        bookkeepingTotal: Number(bookkeepingSummaryRow.totalAmount ?? 0),
       });
     } catch (error) {
       console.log("DASHBOARD LOAD ERROR:", error);
@@ -573,6 +634,14 @@ export default function DashboardScreen({ navigation }) {
         orderId,
         onDone: load,
       });
+    } else if (row.entityType === "bookkeeping") {
+      const entryId = Number(row.entityId);
+      if (!Number.isFinite(entryId)) return;
+      closeDetail();
+      navigation.navigate("BookkeepingDetail", {
+        entryId,
+        onDone: load,
+      });
     }
   }
 
@@ -585,6 +654,8 @@ export default function DashboardScreen({ navigation }) {
       poProgress: "poProgress",
       poPending: "poProgress",
       poValue: "poValue",
+      bookkeepingCount: "bookkeepingFull",
+      bookkeepingTotal: "bookkeepingFull",
     };
     const paginatedType = paginatedMap[statKey];
     if (paginatedType) {
@@ -811,6 +882,24 @@ export default function DashboardScreen({ navigation }) {
       backgroundColor: "#E0F2FE",
     },
     {
+      key: "bookkeepingCount",
+      label: "Catatan Pembukuan",
+      value: formatNumber(metrics.bookkeepingCount),
+      helper: "Total catatan",
+      icon: "receipt-outline",
+      iconColor: "#7C3AED",
+      backgroundColor: "#F3E8FF",
+    },
+    {
+      key: "bookkeepingTotal",
+      label: "Total Pembukuan",
+      value: formatCurrency(metrics.bookkeepingTotal),
+      helper: "Akumulasi nominal",
+      icon: "wallet-outline",
+      iconColor: "#4338CA",
+      backgroundColor: "#E0E7FF",
+    },
+    {
       key: "poCount",
       label: "Total PO",
       value: formatNumber(metrics.poCount),
@@ -842,6 +931,7 @@ export default function DashboardScreen({ navigation }) {
   const displayCategories = categoryStats.slice(0, 5);
   const displayTopItems = topItems.slice(0, 5);
   const displayRecentPOs = recentPOs.slice(0, 5);
+  const displayRecentBookkeeping = recentBookkeeping.slice(0, 5);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", marginBottom: -tabBarHeight }}>
@@ -1028,6 +1118,85 @@ export default function DashboardScreen({ navigation }) {
             ) : (
               <View style={{ paddingVertical: 16 }}>
                 <Text style={{ color: "#94A3B8" }}>Belum ada stok tersimpan. Tambahkan barang untuk melihat ringkasan.</Text>
+              </View>
+            )}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOpacity: 0.05,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <View>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Pembukuan Terbaru</Text>
+                <Text style={{ color: "#64748B" }}>
+                  {recentBookkeeping.length ? `${recentBookkeeping.length} catatan` : "Belum ada catatan"}
+                </Text>
+              </View>
+              {recentBookkeeping.length ? (
+                <TouchableOpacity onPress={() => openPaginatedDetail("bookkeepingFull")}>
+                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {recentBookkeeping.length ? (
+              displayRecentBookkeeping.map((entry, index) => {
+                const noteText = entry.note && String(entry.note).trim() ? String(entry.note) : "";
+                const subtitle = noteText
+                  ? `${formatDateDisplay(entry.entryDate)} • ${noteText}`
+                  : formatDateDisplay(entry.entryDate);
+                return (
+                  <TouchableOpacity
+                    key={entry.id}
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      navigation.navigate("BookkeepingDetail", {
+                        entryId: entry.id,
+                        initialEntry: entry,
+                        onDone: load,
+                      })
+                    }
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 12,
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderColor: "#E2E8F0",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 14,
+                        backgroundColor: "#E0E7FF",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 14,
+                      }}
+                    >
+                      <Ionicons name="wallet-outline" size={22} color="#4338CA" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
+                      <Text style={{ color: "#64748B", fontSize: 12 }}>{subtitle}</Text>
+                    </View>
+                    <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(entry.amount)}</Text>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={{ paddingVertical: 16 }}>
+                <Text style={{ color: "#94A3B8" }}>Belum ada catatan pembukuan.</Text>
               </View>
             )}
           </View>
