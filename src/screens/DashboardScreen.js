@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Animated,
+  Easing,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -67,6 +69,9 @@ export default function DashboardScreen({ navigation }) {
   const [detailSearch, setDetailSearch] = useState("");
   const [detailSearchInput, setDetailSearchInput] = useState("");
   const [activeTab, setActiveTab] = useState("summary");
+  const [tooltipTab, setTooltipTab] = useState(null);
+  const tabTransition = useRef(new Animated.Value(1)).current;
+  const tabTransitioningRef = useRef(false);
   const detailPaging = useRef({ type: null, offset: 0, search: "" });
 
   const DETAIL_PAGE_SIZE = 20;
@@ -456,14 +461,46 @@ export default function DashboardScreen({ navigation }) {
   });
   const dashboardTabs = useMemo(
     () => [
-      { key: "summary", label: "Ringkasan" },
-      { key: "inventory", label: "Inventori" },
-      { key: "purchase", label: "Purchase Order" },
-      { key: "bookkeeping", label: "Pembukuan" },
-      { key: "profit", label: "Profit" },
+      { key: "summary", label: "Ringkasan", icon: "analytics-outline" },
+      { key: "inventory", label: "Inventori", icon: "cube-outline" },
+      { key: "purchase", label: "Purchase Order", icon: "cart-outline" },
+      { key: "bookkeeping", label: "Pembukuan", icon: "book-outline" },
+      { key: "profit", label: "Profit", icon: "trending-up-outline" },
     ],
     [],
   );
+  const handleTabPress = useCallback(
+    key => {
+      if (key === activeTab) {
+        setTooltipTab(null);
+        return;
+      }
+      if (tabTransitioningRef.current) {
+        return;
+      }
+      tabTransitioningRef.current = true;
+      Animated.timing(tabTransition, {
+        toValue: 0,
+        duration: 160,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => {
+        tabTransition.setValue(0);
+        setActiveTab(key);
+        setTooltipTab(null);
+        Animated.timing(tabTransition, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start(() => {
+          tabTransitioningRef.current = false;
+        });
+      });
+    },
+    [activeTab, tabTransition],
+  );
+  const tabContentTranslateY = tabTransition.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   const chartDimensions = useMemo(() => {
     const windowWidth = Dimensions.get("window").width || 360;
     const width = Math.max(windowWidth - 64, 240);
@@ -2162,34 +2199,71 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {dashboardTabs.map(({ key, label }) => {
+          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+            {dashboardTabs.map(({ key, label, icon }) => {
               const isActive = key === activeTab;
+              const showTooltip = tooltipTab === key;
               return (
-                <TouchableOpacity
-                  key={key}
-                  onPress={() => setActiveTab(key)}
-                  activeOpacity={0.85}
-                  style={{
-                    paddingVertical: 10,
-                    paddingHorizontal: 16,
-                    borderRadius: 999,
-                    backgroundColor: isActive ? "#2563EB" : "#E2E8F0",
-                    borderWidth: 1,
-                    borderColor: isActive ? "#2563EB" : "transparent",
-                  }}
-                >
-                  <Text style={{ color: isActive ? "#fff" : "#475569", fontWeight: "600" }}>{label}</Text>
-                </TouchableOpacity>
+                <View key={key} style={{ flex: 1, alignItems: "center" }}>
+                  <View style={{ position: "relative", alignItems: "center", paddingTop: 12 }}>
+                    {showTooltip && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          transform: [{ translateY: -24 }],
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                          backgroundColor: "rgba(15,23,42,0.92)",
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>{label}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => handleTabPress(key)}
+                      onLongPress={() => setTooltipTab(key)}
+                      onPressOut={() => setTooltipTab(null)}
+                      delayLongPress={200}
+                      activeOpacity={0.85}
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        backgroundColor: isActive ? "#2563EB" : "#E2E8F0",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: isActive ? 0 : 1,
+                        borderColor: "#CBD5F5",
+                      }}
+                    >
+                      <Ionicons name={icon} size={isActive ? 26 : 24} color={isActive ? "#fff" : "#334155"} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text
+                    style={{
+                      marginTop: 10,
+                      color: isActive ? "#2563EB" : "#64748B",
+                      fontSize: 12,
+                      fontWeight: "600",
+                      textAlign: "center",
+                    }}
+                  >
+                    {label}
+                  </Text>
+                </View>
               );
             })}
           </View>
 
-          <View style={{ gap: 16 }}>
-            {activeTabSections.map((section, index) => (
-              <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
-            ))}
-          </View>
+          <Animated.View style={{ opacity: tabTransition, transform: [{ translateY: tabContentTranslateY }] }}>
+            <View style={{ gap: 16 }}>
+              {activeTabSections.map((section, index) => (
+                <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
+              ))}
+            </View>
+          </Animated.View>
         </View>
       </ScrollView>
       <Modal visible={detailModal.visible} transparent animationType="fade" onRequestClose={closeDetail} statusBarTranslucent>
