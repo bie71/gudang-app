@@ -332,20 +332,21 @@ export function AddItemScreen({ route, navigation }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
-        <Input label="Nama" value={name} onChangeText={setName} />
-        <Input label="Kategori" value={category} onChangeText={setCategory} />
+        <Input label="Nama" value={name} onChangeText={setName} placeholder="contoh: Kardus 40x40" />
+        <Input label="Kategori" value={category} onChangeText={setCategory} placeholder="contoh: Kemasan" />
         <Input
           label="Harga (Rp)"
           value={price}
           onChangeText={text => setPrice(formatNumberInput(text))}
           keyboardType="numeric"
-          placeholder="0"
+          placeholder="contoh: 125000"
         />
         <Input
           label="Stok"
           value={stock}
           onChangeText={text => setStock(formatNumberInput(text))}
           keyboardType="numeric"
+          placeholder="contoh: 100"
         />
         <TouchableOpacity
           onPress={save}
@@ -389,8 +390,8 @@ export function StockMoveScreen({ route, navigation }) {
         <Text style={{ color: "#64748B" }}>
           {item.name} • Stok: {formatNumberValue(item.stock)}
         </Text>
-        <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" />
-        <Input label="Catatan (opsional)" value={note} onChangeText={setNote} />
+        <Input label="Qty" value={qty} onChangeText={setQty} keyboardType="numeric" placeholder="contoh: 5" />
+        <Input label="Catatan (opsional)" value={note} onChangeText={setNote} placeholder="contoh: Rak gudang A" />
         <TouchableOpacity
           onPress={commit}
           style={{

@@ -1,12 +1,13 @@
 import React from "react";
 import { View, Text, TextInput } from "react-native";
 
-export default function Input({ label, style, ...props }) {
+export default function Input({ label, style, placeholderTextColor = "#94A3B8", ...props }) {
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={{ marginBottom: 6, color: "#475569" }}>{label}</Text>
       <TextInput
         {...props}
+        placeholderTextColor={placeholderTextColor}
         style={{
           backgroundColor: "#fff",
           borderWidth: 1,
