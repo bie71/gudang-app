@@ -1191,7 +1191,7 @@ export default function DashboardScreen({ navigation }) {
                               borderColor: "#E2E8F0",
                             }}
                           >
-                            <View style={{ flex: 1, paddingRight: 12 }}>
+                            <View style={{ flex: 1, paddingRight: 12, marginBottom: 8 }}>
                               <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.title}</Text>
                               {item.subtitle ? (
                                 <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{item.subtitle}</Text>

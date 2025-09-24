@@ -67,10 +67,10 @@ const ITEM_TABLE_ROW_DIVIDER = {
 };
 
 const ITEM_TABLE_COLUMNS = {
-  name: { flexGrow: 1, flexShrink: 1, flexBasis: 296, paddingRight: 16, minWidth: 280 },
+  name: { flexGrow: 1, flexShrink: 1, flexBasis: 260, paddingRight: 16, minWidth: 250 },
   qty: { flexGrow: 0, flexShrink: 0, flexBasis: 96, alignItems: "flex-end", minWidth: 96 },
-  price: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 120 },
-  total: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 120 },
+  price: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 150 },
+  total: { flexGrow: 0, flexShrink: 0, flexBasis: 128, alignItems: "flex-end", minWidth: 150 },
 };
 
 const ITEM_TABLE_NUMERIC_TEXT = {
@@ -1381,27 +1381,84 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       totalDisplay,
     ],
   );
+  const qtyColumnWidth = Math.max(ITEM_TABLE_COLUMNS.qty.flexBasis || 0, ITEM_TABLE_COLUMNS.qty.minWidth || 0);
+  const priceColumnWidth = Math.max(ITEM_TABLE_COLUMNS.price.flexBasis || 0, ITEM_TABLE_COLUMNS.price.minWidth || 0);
+  const totalColumnWidth = Math.max(ITEM_TABLE_COLUMNS.total.flexBasis || 0, ITEM_TABLE_COLUMNS.total.minWidth || 0);
+  const FIXED_ITEM_COLUMNS_WIDTH = qtyColumnWidth + priceColumnWidth + totalColumnWidth;
+  const ITEM_TABLE_ROW_HORIZONTAL_PADDING = (ITEM_TABLE_ROW_BASE.paddingHorizontal || 0) * 2;
+  const ITEM_TABLE_NAME_MIN_WIDTH = 160;
+  const ITEM_TABLE_NAME_MAX_WIDTH = 360;
+  const ITEM_TABLE_MIN_WIDTH = ITEM_TABLE_NAME_MIN_WIDTH + FIXED_ITEM_COLUMNS_WIDTH + ITEM_TABLE_ROW_HORIZONTAL_PADDING;
+  const qtyColumnStyle = {
+    ...ITEM_TABLE_COLUMNS.qty,
+    flexBasis: qtyColumnWidth,
+    width: qtyColumnWidth,
+    minWidth: qtyColumnWidth,
+    maxWidth: qtyColumnWidth,
+  };
+  const priceColumnStyle = {
+    ...ITEM_TABLE_COLUMNS.price,
+    flexBasis: priceColumnWidth,
+    width: priceColumnWidth,
+    minWidth: priceColumnWidth,
+    maxWidth: priceColumnWidth,
+  };
+  const totalColumnStyle = {
+    ...ITEM_TABLE_COLUMNS.total,
+    flexBasis: totalColumnWidth,
+    width: totalColumnWidth,
+    minWidth: totalColumnWidth,
+    maxWidth: totalColumnWidth,
+  };
 
   const InvoiceItemsTable = ({ horizontal = false, keyPrefix = "item", nameHeader = "Barang" }) => {
+    const names = [nameHeader, ...invoiceItems.map(item => (item?.name ?? "").toString())].filter(Boolean);
+    // Keep the name column just wide enough for the longest label so the numeric columns stay visible.
+    const longestNameLength = names.reduce((len, text) => Math.max(len, text.length), 0);
+    const estimatedNameWidth = Math.max(
+      ITEM_TABLE_NAME_MIN_WIDTH,
+      Math.min(ITEM_TABLE_NAME_MAX_WIDTH, Math.round(longestNameLength * 9 + 40)),
+    );
+    const detailCardInnerWidth = Math.max(windowWidth - 68, ITEM_TABLE_MIN_WIDTH);
+    const targetContainerWidth = horizontal
+      ? detailCardInnerWidth
+      : Math.max(previewWidth, ITEM_TABLE_MIN_WIDTH);
+    const maxNameWidth = Math.max(
+      ITEM_TABLE_NAME_MIN_WIDTH,
+      targetContainerWidth - FIXED_ITEM_COLUMNS_WIDTH - ITEM_TABLE_ROW_HORIZONTAL_PADDING,
+    );
+    const nameColumnWidth = Math.min(estimatedNameWidth, maxNameWidth);
+    const tableMinWidth = nameColumnWidth + FIXED_ITEM_COLUMNS_WIDTH + ITEM_TABLE_ROW_HORIZONTAL_PADDING;
+    const nameColumnStyle = {
+      flexGrow: 0,
+      flexShrink: 0,
+      flexBasis: nameColumnWidth,
+      width: nameColumnWidth,
+      maxWidth: nameColumnWidth,
+      minWidth: nameColumnWidth,
+    };
     const tableContent = (
       <View
         style={[
           ITEM_TABLE_CONTAINER_STYLE,
-          horizontal ? null : { width: "100%", alignSelf: "stretch" },
+          horizontal
+            ? { minWidth: tableMinWidth }
+            : { width: "100%", alignSelf: "stretch", minWidth: tableMinWidth },
         ]}
       >
         <View style={ITEM_TABLE_HEADER_ROW}>
-          <View style={ITEM_TABLE_COLUMNS.name}>
+          <View style={[ITEM_TABLE_COLUMNS.name, nameColumnStyle]}>
             <Text style={{ fontWeight: "600", color: "#475569" }}>{nameHeader}</Text>
           </View>
-          <View style={ITEM_TABLE_COLUMNS.qty}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
+          <View style={[qtyColumnStyle, ITEM_TABLE_QTY_CONTAINER]}>
+            <Text style={[ITEM_TABLE_NUMERIC_TEXT_STRONG, { color: "#475569" }]}>Qty</Text>
+            <Text style={[ITEM_TABLE_QTY_UNIT_TEXT, { color: "#94A3B8" }]}>pcs</Text>
           </View>
-          <View style={ITEM_TABLE_COLUMNS.price}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
+          <View style={priceColumnStyle}>
+            <Text style={[ITEM_TABLE_NUMERIC_TEXT, { fontWeight: "600", color: "#475569" }]}>Harga</Text>
           </View>
-          <View style={ITEM_TABLE_COLUMNS.total}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+          <View style={totalColumnStyle}>
+            <Text style={[ITEM_TABLE_NUMERIC_TEXT_STRONG, { color: "#475569" }]}>Total</Text>
           </View>
         </View>
         {invoiceItems.map((item, index) => {
@@ -1413,17 +1470,17 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
               key={item.id ?? `${keyPrefix}-${index}`}
               style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
             >
-              <View style={ITEM_TABLE_COLUMNS.name}>
+              <View style={[ITEM_TABLE_COLUMNS.name, nameColumnStyle]}>
                 <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
               </View>
-              <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+              <View style={[qtyColumnStyle, ITEM_TABLE_QTY_CONTAINER]}>
                 <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
                 <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
               </View>
-              <View style={ITEM_TABLE_COLUMNS.price}>
+              <View style={priceColumnStyle}>
                 <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
               </View>
-              <View style={ITEM_TABLE_COLUMNS.total}>
+              <View style={totalColumnStyle}>
                 <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
               </View>
             </View>
@@ -1569,7 +1626,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", marginTop: -20 }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         <View style={{ backgroundColor: "#fff", padding: 18, borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 16 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1609,7 +1666,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
       <View style={{ position: "absolute", top: -9999, left: -9999 }}>
-        <ViewShot ref={invoicePreviewRef} collapsable={false}>
+        <ViewShot ref={invoicePreviewRef} collapsable={false} style={{ width: previewWidth }}>
           {order ? <InvoicePreview /> : null}
         </ViewShot>
       </View>
