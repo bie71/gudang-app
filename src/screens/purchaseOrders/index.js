@@ -1299,6 +1299,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       const tempUri = await captureRef(invoicePreviewRef.current, {
         format: "png",
         quality: 1,
+        snapshotContentContainer: true,
       });
       const fileBaseName = buildPOFileBase(order);
       const fileName = `${fileBaseName}.png`;
@@ -1380,6 +1381,67 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       totalDisplay,
     ],
   );
+
+  const InvoiceItemsTable = ({ horizontal = false, keyPrefix = "item", nameHeader = "Barang" }) => {
+    const tableContent = (
+      <View
+        style={[
+          ITEM_TABLE_CONTAINER_STYLE,
+          horizontal ? null : { width: "100%", alignSelf: "stretch" },
+        ]}
+      >
+        <View style={ITEM_TABLE_HEADER_ROW}>
+          <View style={ITEM_TABLE_COLUMNS.name}>
+            <Text style={{ fontWeight: "600", color: "#475569" }}>{nameHeader}</Text>
+          </View>
+          <View style={ITEM_TABLE_COLUMNS.qty}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
+          </View>
+          <View style={ITEM_TABLE_COLUMNS.price}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
+          </View>
+          <View style={ITEM_TABLE_COLUMNS.total}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+          </View>
+        </View>
+        {invoiceItems.map((item, index) => {
+          const rowQuantity = formatNumberValue(item.quantity);
+          const rowPrice = formatCurrencyValue(item.price);
+          const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+          return (
+            <View
+              key={item.id ?? `${keyPrefix}-${index}`}
+              style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
+            >
+              <View style={ITEM_TABLE_COLUMNS.name}>
+                <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
+              </View>
+              <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
+                <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
+              </View>
+              <View style={ITEM_TABLE_COLUMNS.price}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
+              </View>
+              <View style={ITEM_TABLE_COLUMNS.total}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+
+    if (horizontal) {
+      return (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
+          {tableContent}
+        </ScrollView>
+      );
+    }
+
+    return tableContent;
+  };
 
   const actionButtons = [
     {
@@ -1493,49 +1555,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         </Text>
         <Text style={{ color: "#0F172A", fontWeight: "700", marginTop: 4 }}>{totalDisplay}</Text>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
-        <View style={ITEM_TABLE_CONTAINER_STYLE}>
-          <View style={ITEM_TABLE_HEADER_ROW}>
-            <View style={ITEM_TABLE_COLUMNS.name}>
-              <Text style={{ fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
-            </View>
-            <View style={ITEM_TABLE_COLUMNS.qty}>
-              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
-            </View>
-            <View style={ITEM_TABLE_COLUMNS.price}>
-              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
-            </View>
-            <View style={ITEM_TABLE_COLUMNS.total}>
-              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
-            </View>
-          </View>
-          {invoiceItems.map((item, index) => {
-            const rowQuantity = formatNumberValue(item.quantity);
-            const rowPrice = formatCurrencyValue(item.price);
-            const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
-            return (
-              <View
-                key={item.id ?? `item-${index}`}
-                style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
-              >
-                <View style={ITEM_TABLE_COLUMNS.name}>
-                  <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
-                </View>
-                <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
-                  <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
-                  <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
-                </View>
-                <View style={ITEM_TABLE_COLUMNS.price}>
-                  <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
-                </View>
-                <View style={ITEM_TABLE_COLUMNS.total}>
-                  <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <InvoiceItemsTable keyPrefix="preview" nameHeader="Deskripsi" />
       {order.note ? (
         <View style={{ marginTop: 16 }}>
           <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 6 }}>Catatan</Text>
@@ -1570,49 +1590,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
           </View>
           <View style={{ marginTop: 20 }}>
             <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
-              <View style={ITEM_TABLE_CONTAINER_STYLE}>
-                <View style={ITEM_TABLE_HEADER_ROW}>
-                  <View style={ITEM_TABLE_COLUMNS.name}>
-                    <Text style={{ fontWeight: "600", color: "#475569" }}>Barang</Text>
-                  </View>
-                  <View style={ITEM_TABLE_COLUMNS.qty}>
-                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
-                  </View>
-                  <View style={ITEM_TABLE_COLUMNS.price}>
-                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
-                  </View>
-                  <View style={ITEM_TABLE_COLUMNS.total}>
-                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
-                  </View>
-                </View>
-                {invoiceItems.map((item, index) => {
-                  const rowQuantity = formatNumberValue(item.quantity);
-                  const rowPrice = formatCurrencyValue(item.price);
-                  const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
-                  return (
-                    <View
-                      key={item.id ?? `summary-item-${index}`}
-                      style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
-                    >
-                      <View style={ITEM_TABLE_COLUMNS.name}>
-                        <Text style={{ color: "#0F172A", flexShrink: 1 }}>{item.name || "-"}</Text>
-                      </View>
-                      <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
-                        <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
-                        <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
-                      </View>
-                      <View style={ITEM_TABLE_COLUMNS.price}>
-                        <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
-                      </View>
-                      <View style={ITEM_TABLE_COLUMNS.total}>
-                        <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
+            <InvoiceItemsTable horizontal keyPrefix="summary" />
           </View>
         </View>
 
