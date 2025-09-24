@@ -28,6 +28,7 @@ import {
   formatCurrencyValue,
   formatDateDisplay,
   formatDateInputValue,
+  formatDateTimeDisplay,
   formatNumberInput,
   formatNumberValue,
   parseNumberInput,
@@ -351,6 +352,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
     name: "",
     quantity: "",
     price: "",
+    costPrice: "",
   });
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
@@ -390,8 +392,16 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
       const name = (item.name || "").trim();
       const quantityValue = parseNumberInput(item.quantity);
       const priceValue = parseNumberInput(item.price);
-      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0;
-      return { key: item.key, name, quantity: quantityValue, price: priceValue, hasValue };
+      const costValue = parseNumberInput(item.costPrice);
+      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0 || costValue > 0;
+      return {
+        key: item.key,
+        name,
+        quantity: quantityValue,
+        price: priceValue,
+        costPrice: costValue,
+        hasValue,
+      };
     });
 
     const activeItems = preparedItems.filter(item => item.hasValue);
@@ -411,12 +421,13 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
 
     const firstItem = activeItems[0];
     const summaryName = buildOrderItemLabel(firstItem.name, activeItems.length);
+    const completedAtValue = status === "DONE" ? new Date().toISOString() : null;
 
     try {
       await exec("BEGIN TRANSACTION");
       const insertRes = await exec(
-        `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note)
-         VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note, completed_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
         [
           supplierName || null,
           ordererName || null,
@@ -426,6 +437,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
           trimmedDate,
           status,
           note || null,
+          completedAtValue,
         ],
       );
       const orderId = insertRes.insertId;
@@ -434,8 +446,8 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
       }
       for (const entry of activeItems) {
         await exec(
-          `INSERT INTO purchase_order_items (order_id, name, quantity, price) VALUES (?,?,?,?)`,
-          [orderId, entry.name, entry.quantity, entry.price],
+          `INSERT INTO purchase_order_items (order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?)`,
+          [orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
         );
       }
       await exec("COMMIT");
@@ -461,7 +473,12 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
           {items.map((item, index) => {
-            const lineTotal = parseNumberInput(item.quantity) * parseNumberInput(item.price);
+            const qtyValue = parseNumberInput(item.quantity);
+            const priceValue = parseNumberInput(item.price);
+            const costValue = parseNumberInput(item.costPrice);
+            const lineTotal = qtyValue * priceValue;
+            const lineCost = qtyValue * costValue;
+            const lineProfit = lineTotal - lineCost;
             return (
               <View
                 key={item.key}
@@ -502,9 +519,32 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
                   keyboardType="numeric"
                   placeholder="contoh: 125000"
                 />
+                <Input
+                  label="Harga Modal"
+                  value={item.costPrice}
+                  onChangeText={text => updateItemField(index, "costPrice", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 90000"
+                />
                 {lineTotal > 0 ? (
                   <Text style={{ color: "#64748B", fontSize: 12 }}>
-                    Perkiraan total: {formatCurrencyValue(lineTotal)}
+                    Total penjualan: {formatCurrencyValue(lineTotal)}
+                  </Text>
+                ) : null}
+                {lineCost > 0 ? (
+                  <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                    Total modal: {formatCurrencyValue(lineCost)}
+                  </Text>
+                ) : null}
+                {lineProfit !== 0 ? (
+                  <Text
+                    style={{
+                      color: lineProfit >= 0 ? "#16A34A" : "#DC2626",
+                      fontSize: 12,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Perkiraan profit: {`${lineProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(lineProfit))}`}
                   </Text>
                 ) : null}
               </View>
@@ -591,6 +631,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
   const [ordererName, setOrdererName] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
   const [status, setStatus] = useState("PROGRESS");
+  const [initialStatus, setInitialStatus] = useState("PROGRESS");
+  const [existingCompletedAt, setExistingCompletedAt] = useState(null);
   const [note, setNote] = useState("");
   const itemKeyRef = useRef(0);
   const createEmptyItem = () => ({
@@ -598,6 +640,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     name: "",
     quantity: "",
     price: "",
+    costPrice: "",
   });
   const [items, setItems] = useState([createEmptyItem()]);
 
@@ -615,11 +658,14 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         setSupplierName(orderRow.supplier_name || "");
         setOrdererName(orderRow.orderer_name || "");
         setOrderDate(formatDateInputValue(orderRow.order_date));
-        setStatus(orderRow.status || "PROGRESS");
+        const nextStatus = orderRow.status || "PROGRESS";
+        setStatus(nextStatus);
+        setInitialStatus(nextStatus);
+        setExistingCompletedAt(orderRow.completed_at || null);
         setNote(orderRow.note || "");
 
         const itemsRes = await exec(
-          `SELECT id, name, quantity, price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
+          `SELECT id, name, quantity, price, cost_price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
           [orderId],
         );
         const loadedItems = [];
@@ -630,6 +676,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
             name: row.name || "",
             quantity: formatNumberInput(String(row.quantity ?? "")),
             price: formatNumberInput(String(row.price ?? "")),
+            costPrice: formatNumberInput(String(row.cost_price ?? "")),
           });
         }
         itemKeyRef.current = 0;
@@ -680,8 +727,16 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
       const name = (item.name || "").trim();
       const quantityValue = parseNumberInput(item.quantity);
       const priceValue = parseNumberInput(item.price);
-      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0;
-      return { key: item.key, name, quantity: quantityValue, price: priceValue, hasValue };
+      const costValue = parseNumberInput(item.costPrice);
+      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0 || costValue > 0;
+      return {
+        key: item.key,
+        name,
+        quantity: quantityValue,
+        price: priceValue,
+        costPrice: costValue,
+        hasValue,
+      };
     });
 
     const activeItems = preparedItems.filter(item => item.hasValue);
@@ -701,11 +756,21 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
 
     const firstItem = activeItems[0];
     const summaryName = buildOrderItemLabel(firstItem.name, activeItems.length);
+    const normalizedStatus = status || "PROGRESS";
+    let completedAtValue = existingCompletedAt;
+    if (normalizedStatus === "DONE") {
+      completedAtValue =
+        initialStatus === "DONE" && existingCompletedAt
+          ? existingCompletedAt
+          : new Date().toISOString();
+    } else {
+      completedAtValue = null;
+    }
 
     try {
       await exec("BEGIN TRANSACTION");
       await exec(
-        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?
+        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?, completed_at = ?
          WHERE id = ?`,
         [
           supplierName || null,
@@ -714,16 +779,17 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
           firstItem.quantity,
           firstItem.price,
           trimmedDate,
-          status,
+          normalizedStatus,
           note || null,
+          completedAtValue,
           orderId,
         ],
       );
       await exec(`DELETE FROM purchase_order_items WHERE order_id = ?`, [orderId]);
       for (const entry of activeItems) {
         await exec(
-          `INSERT INTO purchase_order_items (order_id, name, quantity, price) VALUES (?,?,?,?)`,
-          [orderId, entry.name, entry.quantity, entry.price],
+          `INSERT INTO purchase_order_items (order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?)`,
+          [orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
         );
       }
       await exec("COMMIT");
@@ -758,7 +824,12 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
           {items.map((item, index) => {
-            const lineTotal = parseNumberInput(item.quantity) * parseNumberInput(item.price);
+            const qtyValue = parseNumberInput(item.quantity);
+            const priceValue = parseNumberInput(item.price);
+            const costValue = parseNumberInput(item.costPrice);
+            const lineTotal = qtyValue * priceValue;
+            const lineCost = qtyValue * costValue;
+            const lineProfit = lineTotal - lineCost;
             return (
               <View
                 key={item.key}
@@ -799,9 +870,32 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
                   keyboardType="numeric"
                   placeholder="contoh: 125000"
                 />
+                <Input
+                  label="Harga Modal"
+                  value={item.costPrice}
+                  onChangeText={text => updateItemField(index, "costPrice", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 90000"
+                />
                 {lineTotal > 0 ? (
                   <Text style={{ color: "#64748B", fontSize: 12 }}>
-                    Perkiraan total: {formatCurrencyValue(lineTotal)}
+                    Total penjualan: {formatCurrencyValue(lineTotal)}
+                  </Text>
+                ) : null}
+                {lineCost > 0 ? (
+                  <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                    Total modal: {formatCurrencyValue(lineCost)}
+                  </Text>
+                ) : null}
+                {lineProfit !== 0 ? (
+                  <Text
+                    style={{
+                      color: lineProfit >= 0 ? "#16A34A" : "#DC2626",
+                      fontSize: 12,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Perkiraan profit: {`${lineProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(lineProfit))}`}
                   </Text>
                 ) : null}
               </View>
@@ -916,7 +1010,7 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       }
       const row = res.rows.item(0);
       const itemsRes = await exec(
-        `SELECT id, name, quantity, price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
+        `SELECT id, name, quantity, price, cost_price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
         [orderId],
       );
       const items = [];
@@ -927,10 +1021,13 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
           name: itemRow.name || "",
           quantity: Number(itemRow.quantity ?? 0),
           price: Number(itemRow.price ?? 0),
+          costPrice: Number(itemRow.cost_price ?? 0),
         });
       }
       const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
       const totalValue = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.price || 0), 0);
+      const totalCost = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.costPrice || 0), 0);
+      const totalProfit = totalValue - totalCost;
       const primaryItemName = items.length ? items[0].name : row.item_name || "";
       const itemName = buildOrderItemLabel(primaryItemName, items.length || (primaryItemName ? 1 : 0));
       setOrder({
@@ -943,10 +1040,13 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         itemsCount: items.length,
         totalQuantity,
         totalValue,
+        totalCost,
+        totalProfit,
         status: row.status,
         orderDate: row.order_date,
         note: row.note,
         createdAt: row.created_at,
+        completedAt: row.completed_at,
       });
     } catch (error) {
       console.log("PO DETAIL LOAD ERROR:", error);
@@ -964,8 +1064,27 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
   }, [orderId]);
 
   async function updateStatus(nextStatus) {
+    const normalizedStatus = nextStatus || "PROGRESS";
+    const existingCompleted = order?.completedAt || null;
+    const completedAtValue =
+      normalizedStatus === "DONE"
+        ? existingCompleted || new Date().toISOString()
+        : null;
     try {
-      await exec(`UPDATE purchase_orders SET status = ? WHERE id = ?`, [nextStatus, orderId]);
+      await exec(`UPDATE purchase_orders SET status = ?, completed_at = ? WHERE id = ?`, [
+        normalizedStatus,
+        completedAtValue,
+        orderId,
+      ]);
+      setOrder(prev =>
+        prev
+          ? {
+              ...prev,
+              status: normalizedStatus,
+              completedAt: completedAtValue,
+            }
+          : prev,
+      );
       onDone && onDone();
       load();
     } catch (error) {
@@ -1370,6 +1489,13 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
   const quantityDisplay = formatNumberValue(totalQuantity);
   const itemCountDisplay = formatNumberValue(itemsCount);
   const totalDisplay = formatCurrencyValue(totalValue);
+  const totalCost = order.totalCost ?? 0;
+  const totalProfit = order.totalProfit ?? 0;
+  const totalCostDisplay = formatCurrencyValue(totalCost);
+  const totalProfitLabel = `${totalProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(totalProfit))}`;
+  const profitColor = totalProfit >= 0 ? "#16A34A" : "#DC2626";
+  const isDone = order.status === "DONE";
+  const completedDisplay = order.completedAt ? formatDateTimeDisplay(order.completedAt) : "-";
   const windowWidth = Dimensions.get("window").width;
   const previewBaseWidth = Math.max(windowWidth - 48, 640);
   const previewWidth = computeAmountAwareWidth(
@@ -1642,13 +1768,89 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             <DetailRow label="Jumlah Barang" value={`${itemCountDisplay} barang`} />
             <DetailRow label="Total Qty" value={`${quantityDisplay} pcs`} />
             <DetailRow label="Nilai Total" value={totalDisplay} bold />
+            <DetailRow label="Total Modal" value={totalCostDisplay} />
+            <DetailRow label="Total Profit" value={totalProfitLabel} />
             <DetailRow label="Dibuat" value={formatDateDisplay(order.createdAt)} />
+            {isDone ? <DetailRow label="Selesai" value={completedDisplay} /> : null}
             <DetailRow label="Catatan" value={order.note || "-"} multiline />
+        </View>
+        <View
+          style={{
+            backgroundColor: "#fff",
+            padding: 18,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            marginBottom: 16,
+          }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Ringkasan Profit</Text>
+          {!isDone ? (
+            <Text style={{ color: "#F97316", fontSize: 12, marginTop: 6 }}>
+              Profit final akan dikonfirmasi setelah status PO selesai (DONE).
+            </Text>
+          ) : null}
+          <View style={{ marginTop: 16, gap: 12 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ color: "#64748B" }}>Total Penjualan</Text>
+              <Text style={{ color: "#0F172A", fontWeight: "600" }}>{totalDisplay}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ color: "#64748B" }}>Total Modal</Text>
+              <Text style={{ color: "#0F172A", fontWeight: "600" }}>{totalCostDisplay}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ color: "#64748B" }}>Total Profit</Text>
+              <Text style={{ color: profitColor, fontWeight: "700" }}>{totalProfitLabel}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ color: "#64748B" }}>Selesai</Text>
+              <Text style={{ color: "#0F172A", fontWeight: "500" }}>{isDone ? completedDisplay : "Belum selesai"}</Text>
+            </View>
           </View>
-          <View style={{ marginTop: 20 }}>
-            <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
-            <InvoiceItemsTable horizontal keyPrefix="summary" />
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ color: "#475569", fontWeight: "600", marginBottom: 10 }}>Detail per Barang</Text>
+            {order.items && order.items.length ? (
+              order.items.map(item => {
+                const quantity = item.quantity || 0;
+                const revenue = quantity * (item.price || 0);
+                const cost = quantity * (item.costPrice || 0);
+                const profit = revenue - cost;
+                const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(profit))}`;
+                return (
+                  <View
+                    key={item.id ?? `${item.name}-${item.quantity}`}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#E2E8F0",
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.name || "-"}</Text>
+                    <Text style={{ color: "#64748B", fontSize: 12, marginTop: 2 }}>
+                      {`${formatNumberValue(quantity)} pcs`}
+                    </Text>
+                    <View style={{ marginTop: 8, gap: 4 }}>
+                      <Text style={{ color: "#0F172A" }}>Penjualan: {formatCurrencyValue(revenue)}</Text>
+                      <Text style={{ color: "#0F172A" }}>Modal: {formatCurrencyValue(cost)}</Text>
+                      <Text style={{ color: profit >= 0 ? "#16A34A" : "#DC2626", fontWeight: "600" }}>
+                        Profit: {profitLabel}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })
+            ) : (
+              <Text style={{ color: "#94A3B8" }}>Belum ada barang untuk dihitung.</Text>
+            )}
           </View>
+        </View>
+        <View style={{ marginTop: 20 }}>
+          <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
+          <InvoiceItemsTable horizontal keyPrefix="summary" />
+        </View>
         </View>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, rowGap: 18 }}>

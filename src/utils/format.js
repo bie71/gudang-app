@@ -25,6 +25,21 @@ export function formatDateDisplay(value) {
   return date.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 }
 
+export function formatDateTimeDisplay(value) {
+  if (!value) return "-";
+  const safeValue = value.length === 10 ? `${value}T00:00:00` : value;
+  const date = new Date(safeValue);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export function parseDateString(value) {
   if (!value) return new Date();
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {

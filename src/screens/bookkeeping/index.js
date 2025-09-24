@@ -27,6 +27,7 @@ import {
   buildBookkeepingReportFileBase,
   formatCurrencyValue,
   formatDateDisplay,
+  formatDateTimeDisplay,
   formatDateInputValue,
   formatNumberInput,
   formatNumberValue,
@@ -68,6 +69,14 @@ export function BookkeepingScreen({ navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [adjustModal, setAdjustModal] = useState({
+    visible: false,
+    mode: "ADD",
+    entry: null,
+    amount: "",
+    note: "",
+    loading: false,
+  });
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -184,6 +193,75 @@ export function BookkeepingScreen({ navigation }) {
     if (reportGenerating) return;
     setReportModalState(prev => ({ ...prev, visible: false }));
   };
+
+  const openAdjustModal = (entry, mode = "ADD") => {
+    if (!entry) return;
+    setAdjustModal({
+      visible: true,
+      mode,
+      entry,
+      amount: "",
+      note: "",
+      loading: false,
+    });
+  };
+
+  const closeAdjustModal = () => {
+    setAdjustModal({ visible: false, mode: "ADD", entry: null, amount: "", note: "", loading: false });
+  };
+
+  const handleAdjustAmountChange = text => {
+    setAdjustModal(prev => ({ ...prev, amount: formatNumberInput(text) }));
+  };
+
+  const handleAdjustNoteChange = text => {
+    setAdjustModal(prev => ({ ...prev, note: text }));
+  };
+
+  const handleAdjustSubmit = useCallback(async () => {
+    const { entry, mode, amount, note, loading: submitting } = adjustModal;
+    if (!entry || submitting) return;
+    const parsedAmount = parseNumberInput(amount);
+    if (parsedAmount <= 0) {
+      Alert.alert("Validasi", "Nominal harus lebih dari 0.");
+      return;
+    }
+    const delta = mode === "ADD" ? parsedAmount : -parsedAmount;
+    setAdjustModal(prev => ({ ...prev, loading: true }));
+    try {
+      await exec("BEGIN TRANSACTION");
+      const currentRes = await exec(`SELECT amount FROM bookkeeping_entries WHERE id = ?`, [entry.id]);
+      const currentRow = currentRes.rows.length ? currentRes.rows.item(0) : { amount: entry.amount ?? 0 };
+      const currentAmount = Number(currentRow.amount ?? 0);
+      const nextAmount = currentAmount + delta;
+      await exec(`UPDATE bookkeeping_entries SET amount = ? WHERE id = ?`, [nextAmount, entry.id]);
+      await exec(
+        `INSERT INTO bookkeeping_entry_history (entry_id, change_amount, type, note, previous_amount, new_amount)` +
+          ` VALUES (?,?,?,?,?,?)`,
+        [
+          entry.id,
+          delta,
+          mode,
+          note && note.trim() ? note.trim() : null,
+          currentAmount,
+          nextAmount,
+        ],
+      );
+      await exec("COMMIT");
+      closeAdjustModal();
+      loadSummary();
+      loadEntries({ search: searchTerm, reset: true });
+    } catch (error) {
+      console.log("BOOKKEEPING ADJUST ERROR:", error);
+      try {
+        await exec("ROLLBACK");
+      } catch (rollbackError) {
+        console.log("BOOKKEEPING ADJUST ROLLBACK ERROR:", rollbackError);
+      }
+      setAdjustModal(prev => ({ ...prev, loading: false }));
+      Alert.alert("Gagal", "Perubahan nominal tidak dapat disimpan.");
+    }
+  }, [adjustModal, loadEntries, loadSummary, searchTerm]);
 
   const handleGenerateReport = useCallback(async () => {
     const { startDate, endDate } = reportModalState;
@@ -346,18 +424,7 @@ export function BookkeepingScreen({ navigation }) {
   }, [reportModalState]);
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={() =>
-        navigation.navigate("BookkeepingDetail", {
-          entryId: item.id,
-          initialEntry: item,
-          onDone: () => {
-            loadEntries({ search: searchTerm, reset: true });
-            loadSummary();
-          },
-        })
-      }
+    <View
       style={{
         backgroundColor: "#fff",
         padding: 14,
@@ -367,20 +434,72 @@ export function BookkeepingScreen({ navigation }) {
         marginBottom: 10,
       }}
     >
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontWeight: "700", color: "#0F172A", marginBottom: 4 }}>{item.name}</Text>
-          <Text style={{ color: "#64748B", fontSize: 12 }}>{formatDateDisplay(item.entryDate)}</Text>
-          {item.note ? (
-            <Text style={{ color: "#475569", marginTop: 6 }} numberOfLines={2}>
-              {item.note}
-            </Text>
-          ) : null}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() =>
+          navigation.navigate("BookkeepingDetail", {
+            entryId: item.id,
+            initialEntry: item,
+            onDone: () => {
+              loadEntries({ search: searchTerm, reset: true });
+              loadSummary();
+            },
+          })
+        }
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={{ fontWeight: "700", color: "#0F172A", marginBottom: 4 }}>{item.name}</Text>
+            <Text style={{ color: "#64748B", fontSize: 12 }}>{formatDateDisplay(item.entryDate)}</Text>
+            {item.note ? (
+              <Text style={{ color: "#475569", marginTop: 6 }} numberOfLines={2}>
+                {item.note}
+              </Text>
+            ) : null}
+          </View>
+          <Text style={{ color: "#2563EB", fontWeight: "700" }}>{formatCurrencyValue(item.amount)}</Text>
         </View>
-        <Text style={{ color: "#2563EB", fontWeight: "700" }}>{formatCurrencyValue(item.amount)}</Text>
+      </TouchableOpacity>
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+        <TouchableOpacity
+          onPress={() => openAdjustModal(item, "ADD")}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#22C55E",
+            alignItems: "center",
+            backgroundColor: "#F0FDF4",
+          }}
+        >
+          <Text style={{ color: "#15803D", fontWeight: "600" }}>+ Tambah</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => openAdjustModal(item, "SUBTRACT")}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#F87171",
+            alignItems: "center",
+            backgroundColor: "#FEF2F2",
+          }}
+        >
+          <Text style={{ color: "#DC2626", fontWeight: "600" }}>- Kurangi</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
+
+  const adjustModeLabel = adjustModal.mode === "ADD" ? "Tambah Nominal" : "Kurangi Nominal";
+  const adjustAmountValue = parseNumberInput(adjustModal.amount);
+  const adjustCurrentAmount = Number(adjustModal.entry?.amount ?? 0);
+  const adjustNextAmount =
+    adjustModal.mode === "SUBTRACT"
+      ? adjustCurrentAmount - adjustAmountValue
+      : adjustCurrentAmount + adjustAmountValue;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
@@ -510,6 +629,120 @@ export function BookkeepingScreen({ navigation }) {
       </View>
 
       <Modal
+        visible={adjustModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAdjustModal}
+        statusBarTranslucent
+      >
+        <Pressable
+          onPress={closeAdjustModal}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.45)" }}
+        />
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            paddingBottom: 28,
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.1,
+            shadowRadius: 18,
+            elevation: 6,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
+              <Text style={{ color: "#64748B", marginTop: 4 }}>{adjustModal.entry?.name || "-"}</Text>
+            </View>
+            <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
+              <Ionicons name="close" size={22} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
+            Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
+          </Text>
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
+            <TextInput
+              value={adjustModal.amount}
+              onChangeText={handleAdjustAmountChange}
+              placeholder="contoh: 250000"
+              keyboardType="numeric"
+              style={{
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                height: 44,
+              }}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
+            <TextInput
+              value={adjustModal.note}
+              onChangeText={handleAdjustNoteChange}
+              placeholder="contoh: Penyesuaian kas"
+              style={{
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                height: 96,
+                textAlignVertical: "top",
+              }}
+              placeholderTextColor="#94A3B8"
+              multiline
+            />
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
+            <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
+            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleAdjustSubmit}
+            disabled={adjustModal.loading}
+            style={{
+              marginTop: 18,
+              backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: "center",
+            }}
+          >
+            {adjustModal.loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={closeAdjustModal}
+            disabled={adjustModal.loading}
+            style={{
+              marginTop: 12,
+              paddingVertical: 12,
+              borderRadius: 12,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: "#CBD5F5",
+            }}
+          >
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <Modal
         visible={reportModalState.visible}
         transparent
         animationType="fade"
@@ -631,17 +864,36 @@ export function AddBookkeepingScreen({ route, navigation }) {
       Alert.alert("Validasi", "Nominal harus lebih dari 0.");
       return;
     }
+    const trimmedNote = note && note.trim() ? note.trim() : null;
     try {
       if (isEdit) {
+        const currentRes = await exec(`SELECT amount FROM bookkeeping_entries WHERE id = ?`, [entryId]);
+        const currentAmount = currentRes.rows.length ? Number(currentRes.rows.item(0).amount ?? 0) : 0;
         await exec(
           `UPDATE bookkeeping_entries SET name = ?, amount = ?, entry_date = ?, note = ? WHERE id = ?`,
-          [trimmedName, parsedAmount, entryDate, note || null, entryId],
+          [trimmedName, parsedAmount, entryDate, trimmedNote, entryId],
         );
+        if (currentAmount !== parsedAmount) {
+          const delta = parsedAmount - currentAmount;
+          await exec(
+            `INSERT INTO bookkeeping_entry_history (entry_id, change_amount, type, note, previous_amount, new_amount)` +
+              ` VALUES (?,?,?,?,?,?)`,
+            [entryId, delta, "EDIT", trimmedNote, currentAmount, parsedAmount],
+          );
+        }
       } else {
-        await exec(
+        const insertRes = await exec(
           `INSERT INTO bookkeeping_entries (name, amount, entry_date, note) VALUES (?,?,?,?)`,
-          [trimmedName, parsedAmount, entryDate, note || null],
+          [trimmedName, parsedAmount, entryDate, trimmedNote],
         );
+        const newId = insertRes.insertId;
+        if (newId) {
+          await exec(
+            `INSERT INTO bookkeeping_entry_history (entry_id, change_amount, type, note, previous_amount, new_amount)` +
+              ` VALUES (?,?,?,?,?,?)`,
+            [newId, parsedAmount, "CREATE", trimmedNote, 0, parsedAmount],
+          );
+        }
       }
       onDone && onDone();
       navigation.goBack();
@@ -730,12 +982,22 @@ export function BookkeepingDetailScreen({ route, navigation }) {
   }, []);
 
   const [entry, setEntry] = useState(() => normalizeEntry(initialEntry));
+  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(() => !initialEntry);
+  const [adjustModal, setAdjustModal] = useState({
+    visible: false,
+    mode: "ADD",
+    amount: "",
+    note: "",
+    loading: false,
+  });
   const entryId = Number(entryIdParam);
+  const HISTORY_LIMIT = 50;
 
   const load = useCallback(async () => {
     if (!Number.isFinite(entryId)) {
       setEntry(null);
+      setHistory([]);
       setLoading(false);
       return;
     }
@@ -747,19 +1009,43 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       );
       if (!res.rows.length) {
         setEntry(null);
+        setHistory([]);
         return;
       }
       const row = res.rows.item(0);
-      setEntry(
-        normalizeEntry({
-          id: row.id,
-          name: row.name,
-          amount: row.amount,
-          entryDate: row.entry_date,
-          note: row.note,
-          createdAt: row.created_at,
-        }),
+      const normalized = normalizeEntry({
+        id: row.id,
+        name: row.name,
+        amount: row.amount,
+        entryDate: row.entry_date,
+        note: row.note,
+        createdAt: row.created_at,
+      });
+      setEntry(normalized);
+      const historyRes = await exec(
+        `
+          SELECT id, change_amount, type, note, previous_amount, new_amount, created_at
+          FROM bookkeeping_entry_history
+          WHERE entry_id = ?
+          ORDER BY id DESC
+          LIMIT ?
+        `,
+        [entryId, HISTORY_LIMIT],
       );
+      const historyRows = [];
+      for (let i = 0; i < historyRes.rows.length; i++) {
+        const historyRow = historyRes.rows.item(i);
+        historyRows.push({
+          id: historyRow.id,
+          changeAmount: Number(historyRow.change_amount ?? 0),
+          type: historyRow.type,
+          note: historyRow.note,
+          previousAmount: Number(historyRow.previous_amount ?? 0),
+          newAmount: Number(historyRow.new_amount ?? 0),
+          createdAt: historyRow.created_at,
+        });
+      }
+      setHistory(historyRows);
     } catch (error) {
       console.log("BOOKKEEPING DETAIL LOAD ERROR:", error);
     } finally {
@@ -776,6 +1062,72 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       onDone();
     }
   }, [onDone]);
+
+  const openAdjustModal = useCallback(
+    mode => {
+      if (!entry) return;
+      setAdjustModal({ visible: true, mode, amount: "", note: "", loading: false });
+    },
+    [entry],
+  );
+
+  const closeAdjustModal = useCallback(() => {
+    setAdjustModal({ visible: false, mode: "ADD", amount: "", note: "", loading: false });
+  }, []);
+
+  const handleAdjustAmountChange = text => {
+    setAdjustModal(prev => ({ ...prev, amount: formatNumberInput(text) }));
+  };
+
+  const handleAdjustNoteChange = text => {
+    setAdjustModal(prev => ({ ...prev, note: text }));
+  };
+
+  const handleAdjustSubmit = useCallback(async () => {
+    if (!entry) return;
+    const { mode, amount, note, loading: submitting } = adjustModal;
+    if (submitting) return;
+    const parsedAmount = parseNumberInput(amount);
+    if (parsedAmount <= 0) {
+      Alert.alert("Validasi", "Nominal harus lebih dari 0.");
+      return;
+    }
+    const delta = mode === "ADD" ? parsedAmount : -parsedAmount;
+    setAdjustModal(prev => ({ ...prev, loading: true }));
+    try {
+      await exec("BEGIN TRANSACTION");
+      const currentRes = await exec(`SELECT amount FROM bookkeeping_entries WHERE id = ?`, [entry.id]);
+      const currentRow = currentRes.rows.length ? currentRes.rows.item(0) : { amount: entry.amount ?? 0 };
+      const currentAmount = Number(currentRow.amount ?? 0);
+      const nextAmount = currentAmount + delta;
+      await exec(`UPDATE bookkeeping_entries SET amount = ? WHERE id = ?`, [nextAmount, entry.id]);
+      await exec(
+        `INSERT INTO bookkeeping_entry_history (entry_id, change_amount, type, note, previous_amount, new_amount)` +
+          ` VALUES (?,?,?,?,?,?)`,
+        [
+          entry.id,
+          delta,
+          mode,
+          note && note.trim() ? note.trim() : null,
+          currentAmount,
+          nextAmount,
+        ],
+      );
+      await exec("COMMIT");
+      closeAdjustModal();
+      refreshParent();
+      load();
+    } catch (error) {
+      console.log("BOOKKEEPING DETAIL ADJUST ERROR:", error);
+      try {
+        await exec("ROLLBACK");
+      } catch (rollbackError) {
+        console.log("BOOKKEEPING DETAIL ADJUST ROLLBACK ERROR:", rollbackError);
+      }
+      setAdjustModal(prev => ({ ...prev, loading: false }));
+      Alert.alert("Gagal", "Nominal tidak dapat diperbarui.");
+    }
+  }, [adjustModal, entry, closeAdjustModal, load, refreshParent]);
 
   const handleEdit = useCallback(() => {
     if (!entry) return;
@@ -855,6 +1207,13 @@ export function BookkeepingDetailScreen({ route, navigation }) {
   const formattedDate = formatDateDisplay(entry.entryDate);
   const createdDisplay = entry.createdAt ? formatDateDisplay(entry.createdAt) : "-";
   const noteDisplay = entry.note && entry.note.trim() ? entry.note : "-";
+  const adjustModeLabel = adjustModal.mode === "ADD" ? "Tambah Nominal" : "Kurangi Nominal";
+  const adjustAmountValue = parseNumberInput(adjustModal.amount);
+  const adjustCurrentAmount = Number(entry.amount ?? 0);
+  const adjustNextAmount =
+    adjustModal.mode === "SUBTRACT"
+      ? adjustCurrentAmount - adjustAmountValue
+      : adjustCurrentAmount + adjustAmountValue;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
@@ -877,11 +1236,194 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             <DetailRow label="Dibuat" value={createdDisplay} />
           </View>
         </View>
-        <View style={{ flexDirection: "row", gap: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 12,
+            rowGap: 12,
+            marginBottom: 20,
+          }}
+        >
+          <ActionButton label="Tambah Nominal" onPress={() => openAdjustModal("ADD")} color="#16A34A" />
+          <ActionButton label="Kurangi Nominal" onPress={() => openAdjustModal("SUBTRACT")} color="#F97316" />
           <ActionButton label="Edit" onPress={handleEdit} color="#2563EB" />
           <ActionButton label="Hapus" onPress={confirmDelete} color="#E11D48" />
         </View>
+        <View
+          style={{
+            backgroundColor: "#fff",
+            padding: 18,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Riwayat Perubahan</Text>
+            {history.length ? (
+              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`Menampilkan ${history.length} catatan`}</Text>
+            ) : null}
+          </View>
+          {history.length ? (
+            <View style={{ marginTop: 12, gap: 12 }}>
+              {history.map(item => {
+                const changeColor = item.changeAmount >= 0 ? "#16A34A" : "#DC2626";
+                const changeLabel = `${item.changeAmount >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(item.changeAmount))}`;
+                const typeLabel =
+                  item.type === "ADD"
+                    ? "Penambahan"
+                    : item.type === "SUBTRACT"
+                    ? "Pengurangan"
+                    : item.type === "CREATE"
+                    ? "Catatan Baru"
+                    : item.type === "EDIT"
+                    ? "Perubahan"
+                    : item.type;
+                return (
+                  <View key={item.id} style={{ borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, padding: 12 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ color: changeColor, fontWeight: "700" }}>{changeLabel}</Text>
+                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                        {formatDateTimeDisplay(item.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={{ color: "#0F172A", marginTop: 6, fontWeight: "600" }}>
+                      Saldo: {formatCurrencyValue(item.newAmount)}
+                    </Text>
+                    <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 2 }}>
+                      Sebelumnya: {formatCurrencyValue(item.previousAmount)}
+                    </Text>
+                    <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 2 }}>Jenis: {typeLabel}</Text>
+                    {item.note ? (
+                      <Text style={{ color: "#64748B", marginTop: 6 }}>{item.note}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={{ alignItems: "center", paddingVertical: 24 }}>
+              <Ionicons name="time-outline" size={28} color="#CBD5F5" />
+              <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada riwayat penyesuaian.</Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
+
+      <Modal
+        visible={adjustModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAdjustModal}
+        statusBarTranslucent
+      >
+        <Pressable
+          onPress={closeAdjustModal}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.45)" }}
+        />
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            paddingBottom: 28,
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.12,
+            shadowRadius: 18,
+            elevation: 6,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
+              <Text style={{ color: "#64748B", marginTop: 4 }}>{entry.name}</Text>
+            </View>
+            <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
+              <Ionicons name="close" size={22} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
+            Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
+          </Text>
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
+            <TextInput
+              value={adjustModal.amount}
+              onChangeText={handleAdjustAmountChange}
+              placeholder="contoh: 250000"
+              keyboardType="numeric"
+              style={{
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                height: 44,
+              }}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
+            <TextInput
+              value={adjustModal.note}
+              onChangeText={handleAdjustNoteChange}
+              placeholder="contoh: Penyesuaian"
+              style={{
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                height: 96,
+                textAlignVertical: "top",
+              }}
+              placeholderTextColor="#94A3B8"
+              multiline
+            />
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
+            <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
+            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleAdjustSubmit}
+            disabled={adjustModal.loading}
+            style={{
+              marginTop: 18,
+              backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: "center",
+            }}
+          >
+            {adjustModal.loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={closeAdjustModal}
+            disabled={adjustModal.loading}
+            style={{
+              marginTop: 12,
+              paddingVertical: 12,
+              borderRadius: 12,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: "#CBD5F5",
+            }}
+          >
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
