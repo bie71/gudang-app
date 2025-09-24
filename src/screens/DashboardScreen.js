@@ -20,7 +20,12 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 import StatCard from "../components/StatCard";
 import { CATEGORY_COLORS, getPOStatusStyle } from "../constants";
-import { formatCurrencyValue, formatDateDisplay, formatNumberValue } from "../utils/format";
+import {
+  formatCurrencyValue,
+  formatDateDisplay,
+  formatDateTimeDisplay,
+  formatNumberValue,
+} from "../utils/format";
 import { exec } from "../services/database";
 import { KEYBOARD_AVOIDING_BEHAVIOR } from "../components/FormScrollContainer";
 import { buildOrderItemLabel } from "../utils/purchaseOrders";
@@ -42,11 +47,15 @@ export default function DashboardScreen({ navigation }) {
     poTotalValue: 0,
     bookkeepingCount: 0,
     bookkeepingTotal: 0,
+    itemProfitTotal: 0,
+    poProfitTotal: 0,
   });
   const [categoryStats, setCategoryStats] = useState([]);
   const [topItems, setTopItems] = useState([]);
   const [recentPOs, setRecentPOs] = useState([]);
   const [recentBookkeeping, setRecentBookkeeping] = useState([]);
+  const [itemProfitLeaders, setItemProfitLeaders] = useState([]);
+  const [poProfitLeaders, setPoProfitLeaders] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [detailModal, setDetailModal] = useState({ visible: false, title: "", description: "", rows: [], type: null });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -306,6 +315,131 @@ export default function DashboardScreen({ navigation }) {
         };
       },
     },
+    itemProfit: {
+      title: "Profit Barang",
+      description: "Daftar barang dengan profit tertinggi dari stok keluar.",
+      buildQuery: (search, limit, offset) => ({
+        sql: `
+          SELECT
+            i.id as item_id,
+            i.name,
+            i.category,
+            IFNULL(SUM(h.qty), 0) as total_qty,
+            IFNULL(SUM(h.qty * IFNULL(h.unit_price, i.price)), 0) as total_sales,
+            IFNULL(SUM(h.qty * IFNULL(h.unit_cost, i.cost_price)), 0) as total_cost,
+            IFNULL(SUM(h.profit_amount), 0) as total_profit,
+            MAX(h.created_at) as last_activity
+          FROM stock_history h
+          JOIN items i ON i.id = h.item_id
+          WHERE h.type = 'OUT'
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(i.name,'')) LIKE ?
+              OR LOWER(IFNULL(i.category,'')) LIKE ?
+              OR LOWER(IFNULL(h.note,'')) LIKE ?
+            )
+          GROUP BY h.item_id
+          ORDER BY total_profit DESC, last_activity DESC
+          LIMIT ? OFFSET ?
+        `,
+        params: [
+          search,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          limit + 1,
+          offset,
+        ],
+      }),
+      mapRow: row => {
+        const itemId = Number(row.item_id);
+        const totalProfit = Number(row.total_profit ?? 0);
+        const profitLabel = `${totalProfit >= 0 ? '+' : '-'} ${formatCurrencyValue(Math.abs(totalProfit))}`;
+        const qtyLabel = formatNumberValue(row.total_qty ?? 0);
+        const salesLabel = formatCurrencyValue(row.total_sales ?? 0);
+        const costLabel = formatCurrencyValue(row.total_cost ?? 0);
+        const lastActivityLabel = row.last_activity ? formatDateTimeDisplay(row.last_activity) : 'Belum ada aktivitas';
+        return {
+          key: itemId ? String(itemId) : row.name,
+          title: row.name,
+          subtitle: `${row.category && row.category.trim() ? row.category : 'Tanpa kategori'} • ${qtyLabel} pcs • ${lastActivityLabel}`,
+          trailingPrimary: profitLabel,
+          trailingSecondary: `${salesLabel} • Modal ${costLabel}`,
+          entityType: Number.isFinite(itemId) ? 'item' : undefined,
+          entityId: Number.isFinite(itemId) ? itemId : null,
+        };
+      },
+    },
+    poProfit: {
+      title: "Profit Purchase Order",
+      description: "Purchase order selesai dengan profit tertinggi.",
+      buildQuery: (search, limit, offset) => ({
+        sql: `
+          SELECT
+            po.id,
+            po.orderer_name,
+            po.supplier_name,
+            po.completed_at,
+            po.order_date,
+            IFNULL(SUM(items.quantity), 0) as total_qty,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_sales,
+            IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
+            IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE po.status = 'DONE'
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.note,'')) LIKE ?
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items search_items
+                WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+              )
+            )
+          GROUP BY po.id
+          ORDER BY total_profit DESC, po.completed_at DESC, po.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        params: [
+          search,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          limit + 1,
+          offset,
+        ],
+      }),
+      mapRow: row => {
+        const orderId = Number(row.id);
+        const totalProfit = Number(row.total_profit ?? 0);
+        const profitLabel = `${totalProfit >= 0 ? '+' : '-'} ${formatCurrencyValue(Math.abs(totalProfit))}`;
+        const totalSales = Number(row.total_sales ?? 0);
+        const totalCost = Number(row.total_cost ?? 0);
+        const salesLabel = formatCurrencyValue(totalSales);
+        const costLabel = formatCurrencyValue(totalCost);
+        const qtyLabel = formatNumberValue(row.total_qty ?? 0);
+        const itemCount = Number(row.item_count ?? 0);
+        const itemLabel = buildOrderItemLabel(row.primary_item_name || '', itemCount || (row.primary_item_name ? 1 : 0));
+        const completedLabel = row.completed_at ? formatDateTimeDisplay(row.completed_at) : formatDateDisplay(row.order_date);
+        return {
+          key: orderId ? String(orderId) : itemLabel,
+          title: itemLabel,
+          subtitle: `${row.orderer_name || 'Tanpa pemesan'}${row.supplier_name ? ` • ${row.supplier_name}` : ''} • ${completedLabel}`,
+          trailingPrimary: profitLabel,
+          trailingSecondary: `${salesLabel} • Modal ${costLabel} • ${qtyLabel} pcs`,
+          entityType: Number.isFinite(orderId) ? 'po' : undefined,
+          entityId: Number.isFinite(orderId) ? orderId : null,
+        };
+      },
+    },
   };
 
   const isPaginatedType = type => Boolean(type && PAGINATED_CONFIG[type]);
@@ -401,6 +535,55 @@ export default function DashboardScreen({ navigation }) {
         ORDER BY entry_date DESC, id DESC
         LIMIT 5
       `);
+      const itemProfitSummaryRes = await exec(`
+        SELECT IFNULL(SUM(profit_amount), 0) as total_profit
+        FROM stock_history
+        WHERE type = 'OUT'
+      `);
+      const itemProfitLeadersRes = await exec(`
+        SELECT
+          h.item_id,
+          i.name,
+          i.category,
+          IFNULL(SUM(h.profit_amount), 0) as total_profit,
+          IFNULL(SUM(h.qty), 0) as total_qty,
+          MAX(h.created_at) as last_activity
+        FROM stock_history h
+        JOIN items i ON i.id = h.item_id
+        WHERE h.type = 'OUT'
+        GROUP BY h.item_id
+        ORDER BY total_profit DESC, i.name ASC
+        LIMIT 10
+      `);
+      const poProfitSummaryRes = await exec(`
+        SELECT IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit
+        FROM purchase_orders po
+        JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE po.status = 'DONE'
+      `);
+      const poProfitLeadersRes = await exec(`
+        SELECT
+          po.id,
+          po.orderer_name,
+          po.supplier_name,
+          po.order_date,
+          po.completed_at,
+          IFNULL(SUM(items.quantity), 0) as total_qty,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+          IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
+          IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit,
+          COUNT(items.id) as item_count,
+          COALESCE(
+            (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+            ''
+          ) as primary_item_name
+        FROM purchase_orders po
+        JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE po.status = 'DONE'
+        GROUP BY po.id
+        ORDER BY total_profit DESC, po.completed_at DESC, po.id DESC
+        LIMIT 10
+      `);
 
       const summaryRow = summaryRes.rows.length ? summaryRes.rows.item(0) : {};
       const outRow = outRes.rows.length ? outRes.rows.item(0) : {};
@@ -468,10 +651,47 @@ export default function DashboardScreen({ navigation }) {
         });
       }
 
+      const itemProfitTotalRow = itemProfitSummaryRes.rows.length ? itemProfitSummaryRes.rows.item(0) : {};
+      const itemProfitTotal = Number(itemProfitTotalRow.total_profit ?? 0);
+      const nextItemProfitLeaders = [];
+      for (let i = 0; i < itemProfitLeadersRes.rows.length; i++) {
+        const row = itemProfitLeadersRes.rows.item(i);
+        nextItemProfitLeaders.push({
+          itemId: Number(row.item_id),
+          name: row.name,
+          category: row.category,
+          totalProfit: Number(row.total_profit ?? 0),
+          totalQty: Number(row.total_qty ?? 0),
+          lastActivity: row.last_activity,
+        });
+      }
+
+      const poProfitTotalRow = poProfitSummaryRes.rows.length ? poProfitSummaryRes.rows.item(0) : {};
+      const poProfitTotal = Number(poProfitTotalRow.total_profit ?? 0);
+      const nextPoProfitLeaders = [];
+      for (let i = 0; i < poProfitLeadersRes.rows.length; i++) {
+        const row = poProfitLeadersRes.rows.item(i);
+        nextPoProfitLeaders.push({
+          id: row.id,
+          ordererName: row.orderer_name,
+          supplierName: row.supplier_name,
+          orderDate: row.order_date,
+          completedAt: row.completed_at,
+          totalQuantity: Number(row.total_qty ?? 0),
+          totalValue: Number(row.total_value ?? 0),
+          totalCost: Number(row.total_cost ?? 0),
+          totalProfit: Number(row.total_profit ?? 0),
+          itemCount: Number(row.item_count ?? 0),
+          primaryItemName: row.primary_item_name,
+        });
+      }
+
       setCategoryStats(nextCategoryStats);
       setTopItems(nextTopItems);
       setRecentPOs(nextRecentPOs);
       setRecentBookkeeping(nextRecentBookkeeping);
+      setItemProfitLeaders(nextItemProfitLeaders);
+      setPoProfitLeaders(nextPoProfitLeaders);
       setMetrics({
         totalStock: Number(summaryRow.totalStock ?? 0),
         totalItems: Number(summaryRow.totalItems ?? 0),
@@ -485,6 +705,8 @@ export default function DashboardScreen({ navigation }) {
         poTotalValue: Number(poSummaryRow.totalValue ?? 0),
         bookkeepingCount: Number(bookkeepingSummaryRow.totalEntries ?? 0),
         bookkeepingTotal: Number(bookkeepingSummaryRow.totalAmount ?? 0),
+        itemProfitTotal,
+        poProfitTotal,
       });
     } catch (error) {
       console.log("DASHBOARD LOAD ERROR:", error);
@@ -656,6 +878,8 @@ export default function DashboardScreen({ navigation }) {
       poValue: "poValue",
       bookkeepingCount: "bookkeepingFull",
       bookkeepingTotal: "bookkeepingFull",
+      itemProfitTotal: "itemProfit",
+      poProfitTotal: "poProfit",
     };
     const paginatedType = paginatedMap[statKey];
     if (paginatedType) {
@@ -826,6 +1050,150 @@ export default function DashboardScreen({ navigation }) {
     }
   }
 
+  async function openItemProfitDetail(item) {
+    const itemId = Number(item?.itemId ?? item?.id ?? item?.entityId);
+    if (!Number.isFinite(itemId)) return;
+    const totalProfit = Number(item?.totalProfit ?? 0);
+    const totalQty = Number(item?.totalQty ?? 0);
+    setDetailHasMore(false);
+    setDetailSearch("");
+    setDetailSearchInput("");
+    detailPaging.current = { type: "itemProfitHistory", offset: 0, search: "" };
+    setDetailModal({
+      visible: true,
+      title: item?.name ? `Profit ${item.name}` : "Profit Barang",
+      description: `Total profit: ${
+        totalProfit >= 0
+          ? formatCurrencyValue(totalProfit)
+          : `- ${formatCurrencyValue(Math.abs(totalProfit))}`
+      } • Qty keluar: ${formatNumberValue(totalQty)} pcs`,
+      rows: [],
+      type: "itemProfitHistory",
+    });
+    setDetailLoading(true);
+    try {
+      const res = await exec(
+        `
+          SELECT id, qty, note, created_at, unit_price, unit_cost, profit_amount
+          FROM stock_history
+          WHERE item_id = ? AND type = 'OUT'
+          ORDER BY created_at DESC, id DESC
+          LIMIT 50
+        `,
+        [itemId],
+      );
+      const rows = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        const qty = Number(row.qty ?? 0);
+        const price = Number(row.unit_price ?? 0);
+        const cost = Number(row.unit_cost ?? 0);
+        const profit = Number(row.profit_amount ?? 0);
+        const salesTotal = qty * price;
+        const subtitleParts = [
+          `Qty: ${formatNumberValue(qty)} pcs`,
+          `Jual: ${formatCurrencyValue(price)}`,
+          `Modal: ${formatCurrencyValue(cost)}`,
+        ];
+        const noteText = row.note && String(row.note).trim() ? String(row.note) : "";
+        const displaySubtitle = noteText
+          ? `${subtitleParts.join(" • ")}\nCatatan: ${noteText}`
+          : subtitleParts.join(" • ");
+        const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(profit))}`;
+        rows.push({
+          key: `history-${row.id}`,
+          title: formatDateTimeDisplay(row.created_at),
+          subtitle: displaySubtitle,
+          trailingPrimary: profitLabel,
+          trailingSecondary: `Omzet ${formatCurrencyValue(salesTotal)}`,
+        });
+      }
+      setDetailModal(prev => ({ ...prev, rows }));
+    } catch (error) {
+      console.log("ITEM PROFIT DETAIL ERROR:", error);
+      setDetailModal({
+        visible: true,
+        title: "Tidak dapat memuat detail",
+        description: "Terjadi kesalahan saat memuat riwayat profit barang.",
+        rows: [],
+        type: "itemProfitHistory",
+      });
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function openPoProfitDetail(po) {
+    const orderId = Number(po?.id ?? po?.entityId);
+    if (!Number.isFinite(orderId)) return;
+    const totalProfit = Number(po?.totalProfit ?? 0);
+    const totalSales = Number(po?.totalValue ?? po?.totalSales ?? 0);
+    const totalCost = Number(po?.totalCost ?? 0);
+    const completedLabel = po?.completedAt
+      ? formatDateTimeDisplay(po.completedAt)
+      : po?.orderDate
+      ? formatDateDisplay(po.orderDate)
+      : "-";
+    setDetailHasMore(false);
+    setDetailSearch("");
+    setDetailSearchInput("");
+    detailPaging.current = { type: "poProfitBreakdown", offset: 0, search: "" };
+    setDetailModal({
+      visible: true,
+      title: po?.primaryItemName ? `Profit PO • ${po.primaryItemName}` : "Profit Purchase Order",
+      description: `${
+        totalProfit >= 0
+          ? `Total profit: ${formatCurrencyValue(totalProfit)}`
+          : `Total rugi: - ${formatCurrencyValue(Math.abs(totalProfit))}`
+      } • Omzet: ${formatCurrencyValue(totalSales)} • Modal: ${formatCurrencyValue(totalCost)} • Selesai: ${completedLabel}`,
+      rows: [],
+      type: "poProfitBreakdown",
+    });
+    setDetailLoading(true);
+    try {
+      const res = await exec(
+        `
+          SELECT id, name, quantity, price, cost_price
+          FROM purchase_order_items
+          WHERE order_id = ?
+          ORDER BY id
+        `,
+        [orderId],
+      );
+      const rows = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        const qty = Number(row.quantity ?? 0);
+        const price = Number(row.price ?? 0);
+        const cost = Number(row.cost_price ?? 0);
+        const revenue = qty * price;
+        const totalCostLine = qty * cost;
+        const profit = revenue - totalCostLine;
+        const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(profit))}`;
+        const subtitle = `Qty: ${formatNumberValue(qty)} pcs • Harga jual: ${formatCurrencyValue(price)} • Harga modal: ${formatCurrencyValue(cost)}`;
+        rows.push({
+          key: `po-item-${row.id}`,
+          title: row.name,
+          subtitle,
+          trailingPrimary: profitLabel,
+          trailingSecondary: `Omzet ${formatCurrencyValue(revenue)}`,
+        });
+      }
+      setDetailModal(prev => ({ ...prev, rows }));
+    } catch (error) {
+      console.log("PO PROFIT DETAIL ERROR:", error);
+      setDetailModal({
+        visible: true,
+        title: "Tidak dapat memuat detail",
+        description: "Terjadi kesalahan saat memuat rincian profit purchase order.",
+        rows: [],
+        type: "poProfitBreakdown",
+      });
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   const stats = [
     {
       key: "categories",
@@ -926,12 +1294,38 @@ export default function DashboardScreen({ navigation }) {
       iconColor: "#A855F7",
       backgroundColor: "#F5E8FF",
     },
+    {
+      key: "itemProfitTotal",
+      label: "Profit Barang",
+      value:
+        metrics.itemProfitTotal >= 0
+          ? formatCurrency(metrics.itemProfitTotal)
+          : `- ${formatCurrency(Math.abs(metrics.itemProfitTotal))}`,
+      helper: "Dari stok keluar",
+      icon: "trending-up-outline",
+      iconColor: "#16A34A",
+      backgroundColor: "#DCFCE7",
+    },
+    {
+      key: "poProfitTotal",
+      label: "Profit PO",
+      value:
+        metrics.poProfitTotal >= 0
+          ? formatCurrency(metrics.poProfitTotal)
+          : `- ${formatCurrency(Math.abs(metrics.poProfitTotal))}`,
+      helper: "PO selesai",
+      icon: "pricetag-outline",
+      iconColor: "#F97316",
+      backgroundColor: "#FFEDD5",
+    },
   ];
 
   const displayCategories = categoryStats.slice(0, 5);
   const displayTopItems = topItems.slice(0, 5);
   const displayRecentPOs = recentPOs.slice(0, 5);
   const displayRecentBookkeeping = recentBookkeeping.slice(0, 5);
+  const displayItemProfit = itemProfitLeaders.slice(0, 5);
+  const displayPoProfit = poProfitLeaders.slice(0, 5);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", marginBottom: -tabBarHeight }}>
@@ -1216,6 +1610,176 @@ export default function DashboardScreen({ navigation }) {
           >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
               <View>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Barang</Text>
+                <Text style={{ color: "#64748B" }}>
+                  {itemProfitLeaders.length ? `${itemProfitLeaders.length} barang` : "Belum ada data"}
+                </Text>
+              </View>
+              {itemProfitLeaders.length ? (
+                <TouchableOpacity onPress={() => openPaginatedDetail("itemProfit")}>
+                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {displayItemProfit.length ? (
+              displayItemProfit.map((entry, index) => {
+                const profit = Number(entry.totalProfit ?? 0);
+                const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
+                const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
+                const qtyLabel = formatNumber(entry.totalQty ?? 0);
+                const lastLabel = entry.lastActivity
+                  ? formatDateTimeDisplay(entry.lastActivity)
+                  : "Belum ada transaksi";
+                const categoryLabel = entry.category && entry.category.trim() ? entry.category : "Tanpa kategori";
+                return (
+                  <TouchableOpacity
+                    key={`item-profit-${entry.itemId ?? index}`}
+                    onPress={() => openItemProfitDetail(entry)}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      paddingVertical: 12,
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderColor: "#E2E8F0",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 14,
+                        backgroundColor: "#DCFCE7",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 14,
+                      }}
+                    >
+                      <Ionicons name="trending-up-outline" size={22} color="#16A34A" />
+                    </View>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
+                      <Text style={{ color: "#64748B", fontSize: 12 }}>{`${categoryLabel} • ${qtyLabel} pcs`}</Text>
+                      <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Terakhir: ${lastLabel}`}</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={{ paddingVertical: 16 }}>
+                <Text style={{ color: "#94A3B8" }}>Belum ada data profit barang. Catat transaksi keluar untuk melihat hasil.</Text>
+              </View>
+            )}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOpacity: 0.05,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <View>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Purchase Order</Text>
+                <Text style={{ color: "#64748B" }}>
+                  {poProfitLeaders.length ? `${poProfitLeaders.length} PO selesai` : "Belum ada data"}
+                </Text>
+              </View>
+              {poProfitLeaders.length ? (
+                <TouchableOpacity onPress={() => openPaginatedDetail("poProfit")}>
+                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {displayPoProfit.length ? (
+              displayPoProfit.map((entry, index) => {
+                const profit = Number(entry.totalProfit ?? 0);
+                const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
+                const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
+                const revenueLabel = formatCurrency(entry.totalValue ?? 0);
+                const qtyLabel = formatNumber(entry.totalQuantity ?? 0);
+                const partyLabel = entry.supplierName && entry.supplierName.trim()
+                  ? `${entry.ordererName || "Tanpa pemesan"} • ${entry.supplierName}`
+                  : entry.ordererName || "Tanpa pemesan";
+                const completedLabel = entry.completedAt
+                  ? formatDateTimeDisplay(entry.completedAt)
+                  : formatDateDisplay(entry.orderDate);
+                const itemLabel = buildOrderItemLabel(
+                  entry.primaryItemName || "",
+                  entry.itemCount || (entry.primaryItemName ? 1 : 0),
+                );
+                return (
+                  <TouchableOpacity
+                    key={`po-profit-${entry.id ?? index}`}
+                    onPress={() => openPoProfitDetail(entry)}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      paddingVertical: 12,
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderColor: "#E2E8F0",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 14,
+                        backgroundColor: "#FFE4E6",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 14,
+                      }}
+                    >
+                      <MaterialCommunityIcons name="chart-line" size={22} color="#F97316" />
+                    </View>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{itemLabel}</Text>
+                      <Text style={{ color: "#64748B", fontSize: 12 }}>{partyLabel}</Text>
+                      <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Selesai: ${completedLabel}`}</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
+                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${revenueLabel} • ${qtyLabel} pcs`}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={{ paddingVertical: 16 }}>
+                <Text style={{ color: "#94A3B8" }}>
+                  Belum ada PO selesai dengan data profit. Tandai PO selesai untuk melihat ringkasan.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOpacity: 0.05,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <View>
                 <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>PO Terbaru</Text>
                 <Text style={{ color: "#64748B" }}>{recentPOs.length ? `${recentPOs.length} data` : "Belum ada PO"}</Text>
               </View>
@@ -1346,7 +1910,10 @@ export default function DashboardScreen({ navigation }) {
                       data={detailModal.rows}
                       keyExtractor={(item, index) => (item.key ? String(item.key) : `${detailModal.type || "row"}-${index}`)}
                       renderItem={({ item, index }) => {
-                        const isPressable = item?.entityType === "item" || item?.entityType === "po";
+                        const isPressable =
+                          item?.entityType === "item" ||
+                          item?.entityType === "po" ||
+                          item?.entityType === "bookkeeping";
                         return (
                           <TouchableOpacity
                             onPress={isPressable ? () => handleDetailRowPress(item) : undefined}
@@ -1405,7 +1972,10 @@ export default function DashboardScreen({ navigation }) {
               ) : detailModal.rows.length ? (
                 <ScrollView showsVerticalScrollIndicator={false}>
                   {detailModal.rows.map((row, index) => {
-                    const isPressable = row?.entityType === "item" || row?.entityType === "po";
+                    const isPressable =
+                      row?.entityType === "item" ||
+                      row?.entityType === "po" ||
+                      row?.entityType === "bookkeeping";
                     return (
                       <TouchableOpacity
                         key={row.key ?? `${row.title}-${index}`}
