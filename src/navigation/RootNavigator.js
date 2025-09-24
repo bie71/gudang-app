@@ -8,6 +8,7 @@ import {
   EditPurchaseOrderScreen,
   PurchaseOrderDetailScreen,
 } from "../screens/purchaseOrders";
+import { AddBookkeepingScreen, BookkeepingDetailScreen } from "../screens/bookkeeping";
 
 const Stack = createNativeStackNavigator();
 
@@ -21,6 +22,16 @@ export default function RootNavigator() {
       <Stack.Screen name="AddPurchaseOrder" component={AddPurchaseOrderScreen} options={{ title: "Tambah PO" }} />
       <Stack.Screen name="EditPurchaseOrder" component={EditPurchaseOrderScreen} options={{ title: "Edit PO" }} />
       <Stack.Screen name="PurchaseOrderDetail" component={PurchaseOrderDetailScreen} options={{ title: "Detail PO" }} />
+      <Stack.Screen
+        name="BookkeepingDetail"
+        component={BookkeepingDetailScreen}
+        options={{ title: "Detail Pembukuan" }}
+      />
+      <Stack.Screen
+        name="AddBookkeeping"
+        component={AddBookkeepingScreen}
+        options={{ title: "Tambah Pembukuan" }}
+      />
     </Stack.Navigator>
   );
 }
