@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,13 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import ActionButton from "../../components/ActionButton";
+import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
 import { exec } from "../../services/database";
@@ -273,6 +275,245 @@ export function ItemsScreen({ navigation }) {
           contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
+    </SafeAreaView>
+  );
+}
+
+export function ItemDetailScreen({ route, navigation }) {
+  const selectedItemIdParam = route.params?.itemId;
+  const onDone = route.params?.onDone;
+  const initialItemParam = route.params?.initialItem;
+
+  const normalizeItem = data => {
+    if (!data) return null;
+    return {
+      id: data.id,
+      name: data.name || "",
+      category: data.category || null,
+      price: Number(data.price ?? 0),
+      stock: Number(data.stock ?? 0),
+    };
+  };
+
+  const [item, setItem] = useState(() => normalizeItem(initialItemParam));
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(() => !initialItemParam);
+  const selectedItemId = Number(selectedItemIdParam);
+  const HISTORY_LIMIT = 20;
+
+  const load = useCallback(async () => {
+    if (!Number.isFinite(selectedItemId)) {
+      setItem(null);
+      setHistory([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await exec(
+        `SELECT id, name, category, price, stock FROM items WHERE id = ?`,
+        [selectedItemId],
+      );
+      if (!res.rows.length) {
+        setItem(null);
+        setHistory([]);
+        return;
+      }
+      const row = res.rows.item(0);
+      const nextItem = {
+        id: row.id,
+        name: row.name || "",
+        category: row.category || null,
+        price: Number(row.price ?? 0),
+        stock: Number(row.stock ?? 0),
+      };
+      setItem(nextItem);
+      const historyRes = await exec(
+        `
+          SELECT id, type, qty, note, created_at
+          FROM stock_history
+          WHERE item_id = ?
+          ORDER BY id DESC
+          LIMIT ?
+        `,
+        [selectedItemId, HISTORY_LIMIT],
+      );
+      const historyRows = [];
+      for (let i = 0; i < historyRes.rows.length; i++) {
+        const historyRow = historyRes.rows.item(i);
+        historyRows.push({
+          id: historyRow.id,
+          type: historyRow.type,
+          qty: Number(historyRow.qty ?? 0),
+          note: historyRow.note,
+          createdAt: historyRow.created_at,
+        });
+      }
+      setHistory(historyRows);
+    } catch (error) {
+      console.log("ITEM DETAIL LOAD ERROR:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedItemId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const refreshParent = useCallback(() => {
+    if (typeof onDone === "function") {
+      onDone();
+    }
+  }, [onDone]);
+
+  const handleEdit = useCallback(() => {
+    if (!item) return;
+    navigation.navigate("AddItem", {
+      item,
+      onDone: () => {
+        load();
+        refreshParent();
+      },
+    });
+  }, [item, navigation, load, refreshParent]);
+
+  const handleStockMove = useCallback(
+    mode => {
+      if (!item) return;
+      navigation.navigate("StockMove", {
+        item,
+        mode,
+        onDone: () => {
+          load();
+          refreshParent();
+        },
+      });
+    },
+    [item, navigation, load, refreshParent],
+  );
+
+  const confirmDelete = useCallback(() => {
+    if (!item) return;
+    Alert.alert(
+      "Hapus Barang",
+      `Yakin ingin menghapus ${item.name || "barang ini"}? Data riwayat stok juga akan dihapus.`,
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await exec(`DELETE FROM stock_history WHERE item_id = ?`, [item.id]);
+              await exec(`DELETE FROM items WHERE id = ?`, [item.id]);
+              refreshParent();
+              navigation.goBack();
+            } catch (error) {
+              console.log("ITEM DELETE ERROR:", error);
+              Alert.alert("Gagal", "Barang tidak dapat dihapus. Silakan coba lagi.");
+            }
+          },
+        },
+      ],
+    );
+  }, [item, navigation, refreshParent]);
+
+  const handleViewHistory = useCallback(() => {
+    navigation.navigate("Tabs", { screen: "History" });
+  }, [navigation]);
+
+  if (loading && !item) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color="#2563EB" />
+        <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat detail…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!item) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <Ionicons name="cube-outline" size={42} color="#CBD5F5" />
+        <Text style={{ marginTop: 12, color: "#94A3B8", textAlign: "center" }}>Barang tidak ditemukan.</Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 18, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: "#2563EB" }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Kembali</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const categoryDisplay = item.category && item.category.trim() ? item.category : "Tanpa kategori";
+  const priceDisplay = formatCurrencyValue(item.price ?? 0);
+  const stockDisplay = `${formatNumberValue(item.stock ?? 0)} pcs`;
+  const totalDisplay = formatCurrencyValue((item.price ?? 0) * (item.stock ?? 0));
+  const isRefreshing = loading;
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        <View style={{ backgroundColor: "#fff", padding: 18, borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 16 }}>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
+          <Text style={{ color: "#64748B", marginTop: 6 }}>{categoryDisplay}</Text>
+          <View style={{ marginTop: 18, gap: 12 }}>
+            <DetailRow label="Kategori" value={categoryDisplay} />
+            <DetailRow label="Harga" value={priceDisplay} />
+            <DetailRow label="Stok" value={stockDisplay} />
+            <DetailRow label="Nilai Persediaan" value={totalDisplay} bold />
+          </View>
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, rowGap: 12, marginBottom: 20 }}>
+          <ActionButton label="Barang Masuk" onPress={() => handleStockMove("IN")} color="#2563EB" />
+          <ActionButton label="Barang Keluar" onPress={() => handleStockMove("OUT")} color="#EF4444" />
+          <ActionButton label="Edit Barang" onPress={handleEdit} color="#4F46E5" />
+          <ActionButton label="Hapus" onPress={confirmDelete} color="#E11D48" />
+        </View>
+        <View style={{ backgroundColor: "#fff", padding: 18, borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0" }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Riwayat Stok</Text>
+            {isRefreshing ? <ActivityIndicator size="small" color="#2563EB" /> : null}
+          </View>
+          {history.length ? (
+            <Text style={{ color: "#94A3B8", marginTop: 4, fontSize: 12 }}>
+              Menampilkan {Math.min(history.length, HISTORY_LIMIT)} riwayat terbaru
+            </Text>
+          ) : null}
+          {history.length ? (
+            <View style={{ marginTop: 12, gap: 12 }}>
+              {history.map(entry => (
+                <View key={entry.id} style={{ borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, padding: 12 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ color: entry.type === "IN" ? "#0F766E" : "#DC2626", fontWeight: "700" }}>
+                      {entry.type === "IN" ? "Barang Masuk" : "Barang Keluar"}
+                    </Text>
+                    <Text style={{ color: "#94A3B8", fontSize: 12 }}>{entry.createdAt}</Text>
+                  </View>
+                  <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 6 }}>
+                    Qty {formatNumberValue(entry.qty)} pcs
+                  </Text>
+                  {entry.note ? <Text style={{ color: "#64748B", marginTop: 6 }}>{entry.note}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={{ alignItems: "center", paddingVertical: 28 }}>
+              <Ionicons name="time-outline" size={28} color="#CBD5F5" />
+              <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada riwayat stok.</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={handleViewHistory}
+            style={{ flexDirection: "row", alignItems: "center", marginTop: 16 }}
+          >
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua riwayat</Text>
+            <Ionicons name="arrow-forward" size={18} color="#2563EB" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

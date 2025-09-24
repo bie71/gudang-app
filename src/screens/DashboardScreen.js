@@ -93,13 +93,18 @@ export default function DashboardScreen({ navigation }) {
         `,
         params: [search, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
-      mapRow: row => ({
-        key: String(row.id),
-        title: row.name,
-        subtitle: `${row.category && row.category.trim() ? row.category : "Tanpa kategori"} • ${formatNumberValue(row.stock)} stok`,
-        trailingPrimary: formatCurrencyValue(row.totalValue),
-        trailingSecondary: `@ ${formatCurrencyValue(row.price)}`,
-      }),
+      mapRow: row => {
+        const itemId = Number(row.id);
+        return {
+          key: String(row.id),
+          title: row.name,
+          subtitle: `${row.category && row.category.trim() ? row.category : "Tanpa kategori"} • ${formatNumberValue(row.stock)} stok`,
+          trailingPrimary: formatCurrencyValue(row.totalValue),
+          trailingSecondary: `@ ${formatCurrencyValue(row.price)}`,
+          entityType: Number.isFinite(itemId) ? "item" : undefined,
+          entityId: Number.isFinite(itemId) ? itemId : null,
+        };
+      },
     },
     poFull: {
       title: "Semua Purchase Order",
@@ -138,6 +143,7 @@ export default function DashboardScreen({ navigation }) {
         params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
+        const orderId = Number(row.id);
         const totalQuantity = Number(row.total_quantity ?? 0);
         const totalValue = Number(row.total_value ?? 0);
         const itemCount = Number(row.item_count ?? 0);
@@ -151,6 +157,8 @@ export default function DashboardScreen({ navigation }) {
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
           trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
+          entityType: Number.isFinite(orderId) ? "po" : undefined,
+          entityId: Number.isFinite(orderId) ? orderId : null,
         };
       },
     },
@@ -192,6 +200,7 @@ export default function DashboardScreen({ navigation }) {
         params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
+        const orderId = Number(row.id);
         const totalQuantity = Number(row.total_quantity ?? 0);
         const totalValue = Number(row.total_value ?? 0);
         const itemCount = Number(row.item_count ?? 0);
@@ -205,6 +214,8 @@ export default function DashboardScreen({ navigation }) {
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
           trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
+          entityType: Number.isFinite(orderId) ? "po" : undefined,
+          entityId: Number.isFinite(orderId) ? orderId : null,
         };
       },
     },
@@ -245,6 +256,7 @@ export default function DashboardScreen({ navigation }) {
         params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
       }),
       mapRow: row => {
+        const orderId = Number(row.id);
         const totalQuantity = Number(row.total_quantity ?? 0);
         const totalValue = Number(row.total_value ?? 0);
         const itemCount = Number(row.item_count ?? 0);
@@ -258,6 +270,8 @@ export default function DashboardScreen({ navigation }) {
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
           trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
+          entityType: Number.isFinite(orderId) ? "po" : undefined,
+          entityId: Number.isFinite(orderId) ? orderId : null,
         };
       },
     },
@@ -520,6 +534,48 @@ export default function DashboardScreen({ navigation }) {
     loadDetailPaginated({ type: detailModal.type, searchTerm: term, reset: true });
   }
 
+  async function handleDetailRowPress(row) {
+    if (!row || !row.entityType) return;
+    if (row.entityType === "item") {
+      const itemId = Number(row.entityId);
+      if (!Number.isFinite(itemId)) return;
+      try {
+        const res = await exec(
+          `SELECT id, name, category, price, stock FROM items WHERE id = ?`,
+          [itemId],
+        );
+        if (!res.rows.length) {
+          Alert.alert("Data Tidak Ditemukan", "Barang mungkin telah dihapus.");
+          return;
+        }
+        const itemRow = res.rows.item(0);
+        closeDetail();
+        navigation.navigate("ItemDetail", {
+          itemId: itemRow.id,
+          initialItem: {
+            id: itemRow.id,
+            name: itemRow.name,
+            category: itemRow.category,
+            price: Number(itemRow.price ?? 0),
+            stock: Number(itemRow.stock ?? 0),
+          },
+          onDone: load,
+        });
+      } catch (error) {
+        console.log("ITEM DETAIL OPEN ERROR:", error);
+        Alert.alert("Gagal", "Tidak dapat membuka detail barang.");
+      }
+    } else if (row.entityType === "po") {
+      const orderId = Number(row.entityId);
+      if (!Number.isFinite(orderId)) return;
+      closeDetail();
+      navigation.navigate("PurchaseOrderDetail", {
+        orderId,
+        onDone: load,
+      });
+    }
+  }
+
   async function openDetail(statKey) {
     const paginatedMap = {
       categoriesFull: "categoriesFull",
@@ -569,11 +625,14 @@ export default function DashboardScreen({ navigation }) {
         const rows = [];
         for (let i = 0; i < res.rows.length; i++) {
           const row = res.rows.item(i);
+          const itemId = Number(row.id);
           rows.push({
             key: String(row.id),
             title: row.name,
             subtitle: `${row.category || "Tanpa kategori"} • ${formatNumber(row.stock)} stok`,
             trailingPrimary: `@ ${formatCurrency(row.price)}`,
+            entityType: Number.isFinite(itemId) ? "item" : undefined,
+            entityId: Number.isFinite(itemId) ? itemId : null,
           });
         }
         modalState = {
@@ -593,12 +652,15 @@ export default function DashboardScreen({ navigation }) {
         const rows = [];
         for (let i = 0; i < res.rows.length; i++) {
           const row = res.rows.item(i);
+          const itemId = Number(row.id);
           rows.push({
             key: String(row.id),
             title: row.name,
             subtitle: row.category || "Tanpa kategori",
             trailingPrimary: `${formatNumber(row.stock)} stok`,
             trailingSecondary: `@ ${formatCurrency(row.price)}`,
+            entityType: Number.isFinite(itemId) ? "item" : undefined,
+            entityId: Number.isFinite(itemId) ? itemId : null,
           });
         }
         modalState = {
@@ -618,12 +680,15 @@ export default function DashboardScreen({ navigation }) {
         const rows = [];
         for (let i = 0; i < res.rows.length; i++) {
           const row = res.rows.item(i);
+          const itemId = Number(row.id);
           rows.push({
             key: String(row.id),
             title: row.name,
             subtitle: `${row.category || "Tanpa kategori"} • ${formatNumber(row.stock)} stok`,
             trailingPrimary: formatCurrency(row.totalValue),
             trailingSecondary: `@ ${formatCurrency(row.price)}`,
+            entityType: Number.isFinite(itemId) ? "item" : undefined,
+            entityId: Number.isFinite(itemId) ? itemId : null,
           });
         }
         modalState = {
@@ -635,7 +700,7 @@ export default function DashboardScreen({ navigation }) {
         };
       } else if (statKey === "outQty" || statKey === "outValue") {
         const res = await exec(`
-          SELECT h.id, i.name, i.category, h.qty, h.created_at, i.price, (h.qty * i.price) as totalValue
+          SELECT h.id, i.id as item_id, i.name, i.category, h.qty, h.created_at, i.price, (h.qty * i.price) as totalValue
           FROM stock_history h JOIN items i ON i.id = h.item_id
           WHERE h.type = 'OUT'
           ORDER BY h.created_at DESC, h.id DESC
@@ -644,12 +709,15 @@ export default function DashboardScreen({ navigation }) {
         const rows = [];
         for (let i = 0; i < res.rows.length; i++) {
           const row = res.rows.item(i);
+          const itemId = Number(row.item_id);
           rows.push({
             key: String(row.id),
             title: row.name,
             subtitle: `${row.category || "Tanpa kategori"} • ${row.created_at}`,
             trailingPrimary: `${formatNumber(row.qty)} pcs`,
             trailingSecondary: formatCurrency(row.totalValue),
+            entityType: Number.isFinite(itemId) ? "item" : undefined,
+            entityId: Number.isFinite(itemId) ? itemId : null,
           });
         }
         modalState = {
@@ -1108,32 +1176,38 @@ export default function DashboardScreen({ navigation }) {
                     <FlatList
                       data={detailModal.rows}
                       keyExtractor={(item, index) => (item.key ? String(item.key) : `${detailModal.type || "row"}-${index}`)}
-                      renderItem={({ item, index }) => (
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "flex-start",
-                            paddingVertical: 12,
-                            borderTopWidth: index === 0 ? 0 : 1,
-                            borderColor: "#E2E8F0",
-                          }}
-                        >
-                          <View style={{ flex: 1, paddingRight: 12 }}>
-                            <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.title}</Text>
-                            {item.subtitle ? (
-                              <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{item.subtitle}</Text>
-                            ) : null}
-                          </View>
-                          <View style={{ alignItems: "flex-end" }}>
-                            {item.trailingPrimary ? (
-                              <Text style={{ color: "#0F172A", fontWeight: "700" }}>{item.trailingPrimary}</Text>
-                            ) : null}
-                            {item.trailingSecondary ? (
-                              <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{item.trailingSecondary}</Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      )}
+                      renderItem={({ item, index }) => {
+                        const isPressable = item?.entityType === "item" || item?.entityType === "po";
+                        return (
+                          <TouchableOpacity
+                            onPress={isPressable ? () => handleDetailRowPress(item) : undefined}
+                            disabled={!isPressable}
+                            activeOpacity={isPressable ? 0.7 : 1}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "flex-start",
+                              paddingVertical: 12,
+                              borderTopWidth: index === 0 ? 0 : 1,
+                              borderColor: "#E2E8F0",
+                            }}
+                          >
+                            <View style={{ flex: 1, paddingRight: 12 }}>
+                              <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.title}</Text>
+                              {item.subtitle ? (
+                                <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{item.subtitle}</Text>
+                              ) : null}
+                            </View>
+                            <View style={{ alignItems: "flex-end" }}>
+                              {item.trailingPrimary ? (
+                                <Text style={{ color: "#0F172A", fontWeight: "700" }}>{item.trailingPrimary}</Text>
+                              ) : null}
+                              {item.trailingSecondary ? (
+                                <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{item.trailingSecondary}</Text>
+                              ) : null}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      }}
                       onEndReached={loadMoreDetail}
                       onEndReachedThreshold={0.6}
                       showsVerticalScrollIndicator={false}
@@ -1161,33 +1235,39 @@ export default function DashboardScreen({ navigation }) {
                 </View>
               ) : detailModal.rows.length ? (
                 <ScrollView showsVerticalScrollIndicator={false}>
-                  {detailModal.rows.map((row, index) => (
-                    <View
-                      key={row.key ?? `${row.title}-${index}`}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "flex-start",
-                        paddingVertical: 12,
-                        borderTopWidth: index === 0 ? 0 : 1,
-                        borderColor: "#E2E8F0",
-                      }}
-                    >
-                      <View style={{ flex: 1, paddingRight: 12 }}>
-                        <Text style={{ color: "#0F172A", fontWeight: "600" }}>{row.title}</Text>
-                        {row.subtitle ? (
-                          <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{row.subtitle}</Text>
-                        ) : null}
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        {row.trailingPrimary ? (
-                          <Text style={{ color: "#0F172A", fontWeight: "700" }}>{row.trailingPrimary}</Text>
-                        ) : null}
-                        {row.trailingSecondary ? (
-                          <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{row.trailingSecondary}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
+                  {detailModal.rows.map((row, index) => {
+                    const isPressable = row?.entityType === "item" || row?.entityType === "po";
+                    return (
+                      <TouchableOpacity
+                        key={row.key ?? `${row.title}-${index}`}
+                        onPress={isPressable ? () => handleDetailRowPress(row) : undefined}
+                        disabled={!isPressable}
+                        activeOpacity={isPressable ? 0.7 : 1}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          paddingVertical: 12,
+                          borderTopWidth: index === 0 ? 0 : 1,
+                          borderColor: "#E2E8F0",
+                        }}
+                      >
+                        <View style={{ flex: 1, paddingRight: 12 }}>
+                          <Text style={{ color: "#0F172A", fontWeight: "600" }}>{row.title}</Text>
+                          {row.subtitle ? (
+                            <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{row.subtitle}</Text>
+                          ) : null}
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          {row.trailingPrimary ? (
+                            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{row.trailingPrimary}</Text>
+                          ) : null}
+                          {row.trailingSecondary ? (
+                            <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{row.trailingSecondary}</Text>
+                          ) : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               ) : (
                 <View style={{ paddingVertical: 24 }}>
