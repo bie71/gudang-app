@@ -5,6 +5,11 @@ let initPromise;
 
 export async function ensureDbReady() {
   const db = await dbPromise;
+  try {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  } catch (error) {
+    // ignore pragma errors
+  }
   if (!initPromise) {
     initPromise = (async () => {
       const createItemsSql =
@@ -37,9 +42,19 @@ export async function ensureDbReady() {
         "note TEXT," +
         "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
         ");";
+      const createPurchaseOrderItemsSql =
+        "CREATE TABLE IF NOT EXISTS purchase_order_items (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "order_id INTEGER NOT NULL," +
+        "name TEXT NOT NULL," +
+        "quantity INTEGER NOT NULL DEFAULT 0," +
+        "price INTEGER NOT NULL DEFAULT 0," +
+        "FOREIGN KEY(order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE" +
+        ");";
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
       await db.execAsync(createPurchaseOrderSql);
+      await db.execAsync(createPurchaseOrderItemsSql);
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
       } catch (error) {
@@ -48,6 +63,16 @@ export async function ensureDbReady() {
       try {
         await db.execAsync("UPDATE purchase_orders SET status = 'PROGRESS' WHERE status = 'PENDING'");
         await db.execAsync("UPDATE purchase_orders SET status = 'DONE' WHERE status = 'RECEIVED'");
+      } catch (error) {
+        // ignore migration issues
+      }
+      try {
+        await db.execAsync(
+          "INSERT INTO purchase_order_items (order_id, name, quantity, price) " +
+            "SELECT po.id, po.item_name, po.quantity, po.price " +
+            "FROM purchase_orders po " +
+            "WHERE po.id NOT IN (SELECT order_id FROM purchase_order_items)",
+        );
       } catch (error) {
         // ignore migration issues
       }
