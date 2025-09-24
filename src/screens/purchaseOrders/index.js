@@ -32,7 +32,43 @@ import {
   formatNumberValue,
   parseNumberInput,
 } from "../../utils/format";
+import { buildOrderItemLabel } from "../../utils/purchaseOrders";
 import { getPOStatusStyle, PO_STATUS_OPTIONS, PO_STATUS_STYLES } from "../../constants";
+
+const ITEM_TABLE_COLUMNS = {
+  name: { flexGrow: 1, flexShrink: 1, flexBasis: 0, paddingRight: 12, minWidth: 0 },
+  qty: { flexGrow: 0.9, flexShrink: 1, flexBasis: 88, alignItems: "flex-end", minWidth: 0 },
+  price: { flexGrow: 1.1, flexShrink: 1, flexBasis: 120, alignItems: "flex-end", minWidth: 0 },
+  total: { flexGrow: 1.2, flexShrink: 1, flexBasis: 132, alignItems: "flex-end", minWidth: 0 },
+};
+
+const ITEM_TABLE_NUMERIC_TEXT = {
+  color: "#0F172A",
+  fontVariant: ["tabular-nums"],
+  textAlign: "right",
+  flexShrink: 1,
+};
+
+const ITEM_TABLE_NUMERIC_TEXT_STRONG = {
+  ...ITEM_TABLE_NUMERIC_TEXT,
+  fontWeight: "600",
+};
+
+const ITEM_TABLE_QTY_CONTAINER = {
+  flexDirection: "row",
+  alignItems: "baseline",
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+};
+
+const ITEM_TABLE_QTY_UNIT_TEXT = {
+  color: "#94A3B8",
+  fontSize: 12,
+  marginLeft: 4,
+  textTransform: "uppercase",
+  letterSpacing: 0.08,
+  flexShrink: 0,
+};
 
 export function PurchaseOrdersScreen({ navigation }) {
   const PAGE_SIZE = 20;
@@ -83,10 +119,35 @@ export function PurchaseOrdersScreen({ navigation }) {
     try {
       const res = await exec(
         `
-          SELECT id, supplier_name, orderer_name, item_name, quantity, price, status, order_date, note
-          FROM purchase_orders
-          WHERE (? = '' OR LOWER(item_name) LIKE ? OR LOWER(IFNULL(orderer_name,'')) LIKE ? OR LOWER(IFNULL(supplier_name,'')) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
-          ORDER BY order_date DESC, id DESC
+          SELECT
+            po.id,
+            po.supplier_name,
+            po.orderer_name,
+            po.status,
+            po.order_date,
+            po.note,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE (
+            ? = ''
+            OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.note,'')) LIKE ?
+            OR EXISTS (
+              SELECT 1
+              FROM purchase_order_items search_items
+              WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+            )
+          )
+          GROUP BY po.id
+          ORDER BY po.order_date DESC, po.id DESC
           LIMIT ? OFFSET ?
         `,
         [
@@ -101,17 +162,26 @@ export function PurchaseOrdersScreen({ navigation }) {
       );
       if (requestId !== requestIdRef.current) return;
       const rowsArray = res.rows?._array ?? [];
-      const pageOrders = rowsArray.slice(0, PAGE_SIZE).map(row => ({
-        id: row.id,
-        supplierName: row.supplier_name,
-        ordererName: row.orderer_name,
-        itemName: row.item_name,
-        quantity: Number(row.quantity ?? 0),
-        price: Number(row.price ?? 0),
-        status: row.status,
-        orderDate: row.order_date,
-        note: row.note,
-      }));
+      const pageOrders = rowsArray.slice(0, PAGE_SIZE).map(row => {
+        const itemCount = Number(row.item_count ?? 0);
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
+        return {
+          id: row.id,
+          supplierName: row.supplier_name,
+          ordererName: row.orderer_name,
+          itemName,
+          primaryItemName,
+          itemsCount: itemCount,
+          totalQuantity,
+          totalValue,
+          status: row.status,
+          orderDate: row.order_date,
+          note: row.note,
+        };
+      });
       const nextOffset = offset + pageOrders.length;
       setHasMore(rowsArray.length > PAGE_SIZE);
       setOrders(prev => (shouldReset ? pageOrders : [...prev, ...pageOrders]));
@@ -135,8 +205,12 @@ export function PurchaseOrdersScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    const totalValue = item.quantity * item.price;
     const statusStyle = getPOStatusStyle(item.status);
+    const totalValue = item.totalValue ?? 0;
+    const totalQuantity = item.totalQuantity ?? 0;
+    const itemsCount = item.itemsCount ?? (item.primaryItemName ? 1 : 0);
+    const quantityLabel = formatNumberValue(totalQuantity);
+    const itemsLabel = formatNumberValue(itemsCount || (totalQuantity > 0 ? 1 : 0));
     return (
       <TouchableOpacity
         onPress={() =>
@@ -161,7 +235,7 @@ export function PurchaseOrdersScreen({ navigation }) {
           <Text style={{ color: "#0F172A", fontWeight: "600" }}>{formatDateDisplay(item.orderDate)}</Text>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={{ fontWeight: "700", color: "#0F172A" }}>{formatCurrencyValue(totalValue)}</Text>
-            <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${formatNumberValue(item.quantity)} pcs @ ${formatCurrencyValue(item.price)}`}</Text>
+            <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${itemsLabel} barang • ${quantityLabel} pcs`}</Text>
           </View>
         </View>
         {item.note ? <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 10 }}>{item.note}</Text> : null}
@@ -237,37 +311,108 @@ export function PurchaseOrdersScreen({ navigation }) {
 
 export function AddPurchaseOrderScreen({ route, navigation }) {
   const onDone = route.params?.onDone;
+  const itemKeyRef = useRef(0);
+  const createEmptyItem = () => ({
+    key: `temp-${++itemKeyRef.current}`,
+    name: "",
+    quantity: "",
+    price: "",
+  });
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [price, setPrice] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
   const [status, setStatus] = useState("PROGRESS");
   const [note, setNote] = useState("");
+  const [items, setItems] = useState([createEmptyItem()]);
+
+  const updateItemField = (index, field, value) => {
+    setItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const addItem = () => {
+    setItems(prev => [...prev, createEmptyItem()]);
+  };
+
+  const removeItem = index => {
+    setItems(prev => {
+      if (prev.length <= 1) return prev;
+      const next = [...prev];
+      next.splice(index, 1);
+      return next;
+    });
+  };
 
   async function save() {
-    if (!itemName.trim()) {
-      return Alert.alert("Validasi", "Nama barang wajib diisi.");
-    }
-    const qty = parseNumberInput(quantity);
-    if (qty <= 0) {
-      return Alert.alert("Validasi", "Qty harus lebih besar dari 0.");
-    }
-    const priceValue = parseNumberInput(price);
     const trimmedDate = (orderDate || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
       return Alert.alert("Validasi", "Tanggal harus dalam format YYYY-MM-DD.");
     }
+
+    const preparedItems = items.map(item => {
+      const name = (item.name || "").trim();
+      const quantityValue = parseNumberInput(item.quantity);
+      const priceValue = parseNumberInput(item.price);
+      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0;
+      return { key: item.key, name, quantity: quantityValue, price: priceValue, hasValue };
+    });
+
+    const activeItems = preparedItems.filter(item => item.hasValue);
+    if (!activeItems.length) {
+      return Alert.alert("Validasi", "Minimal satu barang harus diisi.");
+    }
+
+    for (let i = 0; i < activeItems.length; i++) {
+      const entry = activeItems[i];
+      if (!entry.name) {
+        return Alert.alert("Validasi", `Nama barang pada baris ${i + 1} wajib diisi.`);
+      }
+      if (entry.quantity <= 0) {
+        return Alert.alert("Validasi", `Qty pada baris ${i + 1} harus lebih besar dari 0.`);
+      }
+    }
+
+    const firstItem = activeItems[0];
+    const summaryName = buildOrderItemLabel(firstItem.name, activeItems.length);
+
     try {
-      await exec(
+      await exec("BEGIN TRANSACTION");
+      const insertRes = await exec(
         `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note)
          VALUES (?,?,?,?,?,?,?,?)`,
-        [supplierName || null, ordererName || null, itemName, qty, priceValue, trimmedDate, status, note || null],
+        [
+          supplierName || null,
+          ordererName || null,
+          summaryName,
+          firstItem.quantity,
+          firstItem.price,
+          trimmedDate,
+          status,
+          note || null,
+        ],
       );
+      const orderId = insertRes.insertId;
+      if (!orderId) {
+        throw new Error("Gagal mendapatkan ID purchase order");
+      }
+      for (const entry of activeItems) {
+        await exec(
+          `INSERT INTO purchase_order_items (order_id, name, quantity, price) VALUES (?,?,?,?)`,
+          [orderId, entry.name, entry.quantity, entry.price],
+        );
+      }
+      await exec("COMMIT");
       onDone && onDone();
       navigation.goBack();
     } catch (error) {
+      try {
+        await exec("ROLLBACK");
+      } catch (rollbackError) {
+        console.log("PO INSERT ROLLBACK ERROR:", rollbackError);
+      }
       console.log("PO INSERT ERROR:", error);
       Alert.alert("Gagal", "Purchase order tidak dapat disimpan.");
     }
@@ -279,21 +424,75 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Tambah Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
-        <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
-        <Input
-          label="Qty"
-          value={quantity}
-          onChangeText={text => setQuantity(formatNumberInput(text))}
-          keyboardType="numeric"
-          placeholder="contoh: 50"
-        />
-        <Input
-          label="Harga Satuan"
-          value={price}
-          onChangeText={text => setPrice(formatNumberInput(text))}
-          keyboardType="numeric"
-          placeholder="contoh: 125000"
-        />
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
+          {items.map((item, index) => {
+            const lineTotal = parseNumberInput(item.quantity) * parseNumberInput(item.price);
+            return (
+              <View
+                key={item.key}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  padding: 16,
+                  marginBottom: index === items.length - 1 ? 0 : 12,
+                }}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <Text style={{ fontWeight: "600", color: "#0F172A" }}>{`Barang ${index + 1}`}</Text>
+                  {items.length > 1 ? (
+                    <TouchableOpacity onPress={() => removeItem(index)} style={{ padding: 4 }}>
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <Input
+                  label="Nama Barang"
+                  value={item.name}
+                  onChangeText={text => updateItemField(index, "name", text)}
+                  placeholder="contoh: Kardus 40x40"
+                />
+                <Input
+                  label="Qty"
+                  value={item.quantity}
+                  onChangeText={text => updateItemField(index, "quantity", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 50"
+                />
+                <Input
+                  label="Harga Satuan"
+                  value={item.price}
+                  onChangeText={text => updateItemField(index, "price", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 125000"
+                />
+                {lineTotal > 0 ? (
+                  <Text style={{ color: "#64748B", fontSize: 12 }}>
+                    Perkiraan total: {formatCurrencyValue(lineTotal)}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
+          <TouchableOpacity
+            onPress={addItem}
+            style={{
+              marginTop: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              alignSelf: "flex-start",
+              backgroundColor: "#E0F2FE",
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#0284C7" style={{ marginRight: 6 }} />
+            <Text style={{ color: "#0369A1", fontWeight: "600" }}>Tambah Barang</Text>
+          </TouchableOpacity>
+        </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
@@ -356,35 +555,59 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [price, setPrice] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
   const [status, setStatus] = useState("PROGRESS");
   const [note, setNote] = useState("");
+  const itemKeyRef = useRef(0);
+  const createEmptyItem = () => ({
+    key: `temp-${++itemKeyRef.current}`,
+    name: "",
+    quantity: "",
+    price: "",
+  });
+  const [items, setItems] = useState([createEmptyItem()]);
 
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
-        const res = await exec(`SELECT * FROM purchase_orders WHERE id = ?`, [orderId]);
-        if (res.rows.length) {
-          const row = res.rows.item(0);
-          setSupplierName(row.supplier_name || "");
-          setOrdererName(row.orderer_name || "");
-          setItemName(row.item_name || "");
-          setQuantity(formatNumberInput(String(row.quantity ?? "")));
-          setPrice(formatNumberInput(String(row.price ?? "")));
-          setOrderDate(formatDateInputValue(row.order_date));
-          setStatus(row.status || "PROGRESS");
-          setNote(row.note || "");
-        } else {
+        const orderRes = await exec(`SELECT * FROM purchase_orders WHERE id = ?`, [orderId]);
+        if (!orderRes.rows.length) {
           Alert.alert("Tidak ditemukan", "Purchase order tidak ditemukan.");
           navigation.goBack();
+          return;
+        }
+        const orderRow = orderRes.rows.item(0);
+        setSupplierName(orderRow.supplier_name || "");
+        setOrdererName(orderRow.orderer_name || "");
+        setOrderDate(formatDateInputValue(orderRow.order_date));
+        setStatus(orderRow.status || "PROGRESS");
+        setNote(orderRow.note || "");
+
+        const itemsRes = await exec(
+          `SELECT id, name, quantity, price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
+          [orderId],
+        );
+        const loadedItems = [];
+        for (let i = 0; i < itemsRes.rows.length; i++) {
+          const row = itemsRes.rows.item(i);
+          loadedItems.push({
+            key: `item-${row.id}`,
+            name: row.name || "",
+            quantity: formatNumberInput(String(row.quantity ?? "")),
+            price: formatNumberInput(String(row.price ?? "")),
+          });
+        }
+        itemKeyRef.current = 0;
+        if (!loadedItems.length) {
+          setItems([createEmptyItem()]);
+        } else {
+          setItems(loadedItems);
         }
       } catch (error) {
         console.log("PO DETAIL LOAD ERROR:", error);
         Alert.alert("Gagal", "Tidak dapat memuat purchase order.");
+        navigation.goBack();
       } finally {
         setLoading(false);
       }
@@ -392,28 +615,92 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     load();
   }, [orderId, navigation]);
 
+  const updateItemField = (index, field, value) => {
+    setItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const addItem = () => {
+    setItems(prev => [...prev, createEmptyItem()]);
+  };
+
+  const removeItem = index => {
+    setItems(prev => {
+      if (prev.length <= 1) return prev;
+      const next = [...prev];
+      next.splice(index, 1);
+      return next;
+    });
+  };
+
   async function save() {
-    if (!itemName.trim()) {
-      return Alert.alert("Validasi", "Nama barang wajib diisi.");
-    }
-    const qty = parseNumberInput(quantity);
-    if (qty <= 0) {
-      return Alert.alert("Validasi", "Qty harus lebih besar dari 0.");
-    }
-    const priceValue = parseNumberInput(price);
     const trimmedDate = (orderDate || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
       return Alert.alert("Validasi", "Tanggal harus dalam format YYYY-MM-DD.");
     }
+
+    const preparedItems = items.map(item => {
+      const name = (item.name || "").trim();
+      const quantityValue = parseNumberInput(item.quantity);
+      const priceValue = parseNumberInput(item.price);
+      const hasValue = Boolean(name) || quantityValue > 0 || priceValue > 0;
+      return { key: item.key, name, quantity: quantityValue, price: priceValue, hasValue };
+    });
+
+    const activeItems = preparedItems.filter(item => item.hasValue);
+    if (!activeItems.length) {
+      return Alert.alert("Validasi", "Minimal satu barang harus diisi.");
+    }
+
+    for (let i = 0; i < activeItems.length; i++) {
+      const entry = activeItems[i];
+      if (!entry.name) {
+        return Alert.alert("Validasi", `Nama barang pada baris ${i + 1} wajib diisi.`);
+      }
+      if (entry.quantity <= 0) {
+        return Alert.alert("Validasi", `Qty pada baris ${i + 1} harus lebih besar dari 0.`);
+      }
+    }
+
+    const firstItem = activeItems[0];
+    const summaryName = buildOrderItemLabel(firstItem.name, activeItems.length);
+
     try {
+      await exec("BEGIN TRANSACTION");
       await exec(
         `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?
          WHERE id = ?`,
-        [supplierName || null, ordererName || null, itemName, qty, priceValue, trimmedDate, status, note || null, orderId],
+        [
+          supplierName || null,
+          ordererName || null,
+          summaryName,
+          firstItem.quantity,
+          firstItem.price,
+          trimmedDate,
+          status,
+          note || null,
+          orderId,
+        ],
       );
+      await exec(`DELETE FROM purchase_order_items WHERE order_id = ?`, [orderId]);
+      for (const entry of activeItems) {
+        await exec(
+          `INSERT INTO purchase_order_items (order_id, name, quantity, price) VALUES (?,?,?,?)`,
+          [orderId, entry.name, entry.quantity, entry.price],
+        );
+      }
+      await exec("COMMIT");
       onDone && onDone();
       navigation.goBack();
     } catch (error) {
+      try {
+        await exec("ROLLBACK");
+      } catch (rollbackError) {
+        console.log("PO UPDATE ROLLBACK ERROR:", rollbackError);
+      }
       console.log("PO UPDATE ERROR:", error);
       Alert.alert("Gagal", "Purchase order tidak dapat diperbarui.");
     }
@@ -434,21 +721,75 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Edit Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
-        <Input label="Nama Barang" value={itemName} onChangeText={setItemName} placeholder="contoh: Kardus 40x40" />
-        <Input
-          label="Qty"
-          value={quantity}
-          onChangeText={text => setQuantity(formatNumberInput(text))}
-          keyboardType="numeric"
-          placeholder="contoh: 50"
-        />
-        <Input
-          label="Harga Satuan"
-          value={price}
-          onChangeText={text => setPrice(formatNumberInput(text))}
-          keyboardType="numeric"
-          placeholder="contoh: 125000"
-        />
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
+          {items.map((item, index) => {
+            const lineTotal = parseNumberInput(item.quantity) * parseNumberInput(item.price);
+            return (
+              <View
+                key={item.key}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  padding: 16,
+                  marginBottom: index === items.length - 1 ? 0 : 12,
+                }}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <Text style={{ fontWeight: "600", color: "#0F172A" }}>{`Barang ${index + 1}`}</Text>
+                  {items.length > 1 ? (
+                    <TouchableOpacity onPress={() => removeItem(index)} style={{ padding: 4 }}>
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <Input
+                  label="Nama Barang"
+                  value={item.name}
+                  onChangeText={text => updateItemField(index, "name", text)}
+                  placeholder="contoh: Kardus 40x40"
+                />
+                <Input
+                  label="Qty"
+                  value={item.quantity}
+                  onChangeText={text => updateItemField(index, "quantity", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 50"
+                />
+                <Input
+                  label="Harga Satuan"
+                  value={item.price}
+                  onChangeText={text => updateItemField(index, "price", formatNumberInput(text))}
+                  keyboardType="numeric"
+                  placeholder="contoh: 125000"
+                />
+                {lineTotal > 0 ? (
+                  <Text style={{ color: "#64748B", fontSize: 12 }}>
+                    Perkiraan total: {formatCurrencyValue(lineTotal)}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
+          <TouchableOpacity
+            onPress={addItem}
+            style={{
+              marginTop: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              alignSelf: "flex-start",
+              backgroundColor: "#E0F2FE",
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#0284C7" style={{ marginRight: 6 }} />
+            <Text style={{ color: "#0369A1", fontWeight: "600" }}>Tambah Barang</Text>
+          </TouchableOpacity>
+        </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
@@ -535,23 +876,44 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
     try {
       setLoading(true);
       const res = await exec(`SELECT * FROM purchase_orders WHERE id = ?`, [orderId]);
-      if (res.rows.length) {
-        const row = res.rows.item(0);
-        setOrder({
-          id: row.id,
-          supplierName: row.supplier_name,
-          ordererName: row.orderer_name,
-          itemName: row.item_name,
-          quantity: Number(row.quantity ?? 0),
-          price: Number(row.price ?? 0),
-          status: row.status,
-          orderDate: row.order_date,
-          note: row.note,
-          createdAt: row.created_at,
-        });
-      } else {
+      if (!res.rows.length) {
         setOrder(null);
+        return;
       }
+      const row = res.rows.item(0);
+      const itemsRes = await exec(
+        `SELECT id, name, quantity, price FROM purchase_order_items WHERE order_id = ? ORDER BY id`,
+        [orderId],
+      );
+      const items = [];
+      for (let i = 0; i < itemsRes.rows.length; i++) {
+        const itemRow = itemsRes.rows.item(i);
+        items.push({
+          id: itemRow.id,
+          name: itemRow.name || "",
+          quantity: Number(itemRow.quantity ?? 0),
+          price: Number(itemRow.price ?? 0),
+        });
+      }
+      const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      const totalValue = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.price || 0), 0);
+      const primaryItemName = items.length ? items[0].name : row.item_name || "";
+      const itemName = buildOrderItemLabel(primaryItemName, items.length || (primaryItemName ? 1 : 0));
+      setOrder({
+        id: row.id,
+        supplierName: row.supplier_name,
+        ordererName: row.orderer_name,
+        itemName,
+        primaryItemName,
+        items,
+        itemsCount: items.length,
+        totalQuantity,
+        totalValue,
+        status: row.status,
+        orderDate: row.order_date,
+        note: row.note,
+        createdAt: row.created_at,
+      });
     } catch (error) {
       console.log("PO DETAIL LOAD ERROR:", error);
       Alert.alert("Gagal", "Tidak dapat memuat detail PO.");
@@ -613,12 +975,47 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       const escapeHtml = text => (text ?? "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const formattedDate = formatDateDisplay(order.orderDate);
       const createdDate = formatDateDisplay(order.createdAt);
-      const qtyFormatted = formatNumberValue(order.quantity);
-      const priceFormatted = formatCurrencyValue(order.price);
+      const totalValue = order.totalValue ?? 0;
+      const totalQuantity = order.totalQuantity ?? 0;
       const totalFormatted = formatCurrencyValue(totalValue);
+      const totalQuantityFormatted = formatNumberValue(totalQuantity);
+      const invoiceItems = order.items && order.items.length
+        ? order.items
+        : [
+            {
+              id: order.id,
+              name: order.primaryItemName || order.itemName || "Tanpa barang",
+              quantity: totalQuantity || 0,
+              price: totalQuantity > 0 ? Math.round(totalValue / totalQuantity) : totalValue,
+            },
+          ];
       const noteHtml = order.note ? escapeHtml(order.note).replace(/\n/g, "<br/>") : "";
       const statusStyle = getPOStatusStyle(order.status);
-      const cardWidth = computeAmountAwareWidth(640, 900, [priceFormatted, totalFormatted]);
+      const priceStrings = invoiceItems.map(item => formatCurrencyValue(item.price));
+      const rowTotalStrings = invoiceItems.map(item => formatCurrencyValue((item.quantity || 0) * (item.price || 0)));
+      const cardWidth = computeAmountAwareWidth(640, 900, [...priceStrings, ...rowTotalStrings, totalFormatted]);
+      const itemsHtml = invoiceItems
+        .map(item => {
+          const qtyFormatted = formatNumberValue(item.quantity);
+          const priceFormatted = formatCurrencyValue(item.price);
+          const rowTotalFormatted = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+          return `
+                  <tr>
+                    <td class="item col-item">${escapeHtml(item.name || '-')}</td>
+                    <td class="numeric numeric--qty col-qty">
+                      <span class="value">${qtyFormatted}</span>
+                      <span class="unit">pcs</span>
+                    </td>
+                    <td class="numeric numeric--price col-price">
+                      <span class="value">${priceFormatted}</span>
+                    </td>
+                    <td class="numeric numeric--total col-total">
+                      <span class="value">${rowTotalFormatted}</span>
+                    </td>
+                  </tr>`;
+        })
+        .join("\n");
+      const itemCountFormatted = formatNumberValue(order.itemsCount ?? invoiceItems.length);
       const html = `
         <html>
           <head>
@@ -690,8 +1087,11 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
               thead {
                 background: #f1f5f9;
               }
-              th {
+              th,
+              td {
                 padding: 14px 16px;
+              }
+              th {
                 text-align: left;
                 font-size: 13px;
                 text-transform: uppercase;
@@ -701,49 +1101,52 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
               th.numeric {
                 text-align: right;
               }
-              th.numeric--qty,
-              td.numeric--qty {
-                min-width: 96px;
+              th.col-item,
+              td.col-item {
+                width: 46%;
               }
-              th.numeric--price,
-              td.numeric--price {
-                min-width: 150px;
+              th.col-qty,
+              td.col-qty {
+                width: 14%;
               }
-              th.numeric--total,
-              td.numeric--total {
-                min-width: 170px;
+              th.col-price,
+              td.col-price,
+              th.col-total,
+              td.col-total {
+                width: 20%;
               }
               td {
-                padding: 16px;
                 border-bottom: 1px solid #e2e8f0;
                 font-size: 15px;
                 color: #0f172a;
-                vertical-align: middle;
+                vertical-align: top;
               }
-              td.item {
-                width: 100%;
+              td.col-item {
+                word-break: break-word;
               }
               td.numeric {
-                text-align: right;
-                white-space: nowrap;
+                display: flex;
+                justify-content: flex-end;
+                align-items: baseline;
+                flex-wrap: wrap;
                 font-variant-numeric: tabular-nums;
               }
               td.numeric .value {
-                display: inline-block;
                 font-weight: 500;
-                vertical-align: baseline;
+                text-align: right;
+                flex: 0 1 auto;
+                min-width: 0;
               }
               td.numeric--qty .value {
                 font-weight: 600;
               }
               td.numeric .unit {
-                display: inline-block;
                 margin-left: 6px;
                 font-size: 12px;
                 color: #94a3b8;
                 text-transform: uppercase;
                 letter-spacing: 0.08em;
-                vertical-align: baseline;
+                flex: 0 0 auto;
               }
               td.numeric--total .value {
                 font-weight: 600;
@@ -774,31 +1177,21 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 <p><strong>No. PO</strong>${escapeHtml(String(order.id))}</p>
                 <p><strong>Tanggal PO</strong>${escapeHtml(formattedDate)}</p>
                 <p><strong>Pemesan</strong>${escapeHtml(order.ordererName || '-')}</p>
+                <p><strong>Jumlah Barang</strong>${itemCountFormatted} item</p>
+                <p><strong>Total Qty</strong>${totalQuantityFormatted} pcs</p>
                 <p><strong>Nilai Total</strong>${totalFormatted}</p>
               </div>
               <table>
                 <thead>
                   <tr>
-                    <th>Barang</th>
-                    <th class="numeric numeric--qty">Qty</th>
-                    <th class="numeric numeric--price">Harga</th>
-                    <th class="numeric numeric--total">Total</th>
+                    <th class="col-item">Barang</th>
+                    <th class="numeric numeric--qty col-qty">Qty</th>
+                    <th class="numeric numeric--price col-price">Harga</th>
+                    <th class="numeric numeric--total col-total">Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td class="item">${escapeHtml(order.itemName)}</td>
-                    <td class="numeric numeric--qty">
-                      <span class="value">${qtyFormatted}</span>
-                      <span class="unit">pcs</span>
-                    </td>
-                    <td class="numeric numeric--price">
-                      <span class="value">${priceFormatted}</span>
-                    </td>
-                    <td class="numeric numeric--total">
-                      <span class="value">${totalFormatted}</span>
-                    </td>
-                  </tr>
+                  ${itemsHtml}
                 </tbody>
               </table>
               ${order.note ? `<div class="summary"><strong>Catatan:</strong> ${noteHtml}</div>` : ''}
@@ -897,14 +1290,37 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
     );
   }
 
-  const totalValue = order.quantity * order.price;
+  const invoiceItems = order.items && order.items.length
+    ? order.items
+    : [
+        {
+          id: `fallback-${order.id}`,
+          name: order.primaryItemName || order.itemName || "Tanpa barang",
+          quantity: order.totalQuantity ?? 0,
+          price:
+            (order.totalQuantity ?? 0) > 0
+              ? Math.round((order.totalValue ?? 0) / Math.max(order.totalQuantity ?? 1, 1))
+              : order.totalValue ?? 0,
+        },
+      ];
+  const totalValue = order.totalValue ?? 0;
+  const totalQuantity = order.totalQuantity ?? 0;
+  const itemsCount = order.itemsCount ?? invoiceItems.length;
   const statusStyle = getPOStatusStyle(order.status);
-  const quantityDisplay = formatNumberValue(order.quantity);
-  const priceDisplay = formatCurrencyValue(order.price);
+  const quantityDisplay = formatNumberValue(totalQuantity);
+  const itemCountDisplay = formatNumberValue(itemsCount);
   const totalDisplay = formatCurrencyValue(totalValue);
   const windowWidth = Dimensions.get("window").width;
   const previewBaseWidth = Math.max(windowWidth - 48, 640);
-  const previewWidth = computeAmountAwareWidth(previewBaseWidth, 900, [priceDisplay, totalDisplay]);
+  const previewWidth = computeAmountAwareWidth(
+    previewBaseWidth,
+    900,
+    [
+      ...invoiceItems.map(item => formatCurrencyValue(item.price)),
+      ...invoiceItems.map(item => formatCurrencyValue((item.quantity || 0) * (item.price || 0))),
+      totalDisplay,
+    ],
+  );
 
   const actionButtons = [
     {
@@ -1013,6 +1429,10 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         <Text style={{ color: "#0F172A", fontWeight: "600" }}>{order.itemName}</Text>
         <Text style={{ color: "#64748B", marginTop: 6 }}>Pemesan: {order.ordererName || "-"}</Text>
         <Text style={{ color: "#64748B", marginTop: 4 }}>Tanggal: {formatDateDisplay(order.orderDate)}</Text>
+        <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
+          Total {itemCountDisplay} barang • {quantityDisplay} pcs
+        </Text>
+        <Text style={{ color: "#0F172A", fontWeight: "700", marginTop: 4 }}>{totalDisplay}</Text>
       </View>
       <View style={{ borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" }}>
         <View
@@ -1023,70 +1443,51 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             paddingHorizontal: 12,
           }}
         >
-          <View style={{ flex: 1, paddingRight: 12 }}>
+          <View style={ITEM_TABLE_COLUMNS.name}>
             <Text style={{ fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
           </View>
-          <View style={{ minWidth: 96, alignItems: "flex-end", flexShrink: 0 }}>
-            <Text style={{ fontWeight: "600", color: "#475569" }}>Qty</Text>
+          <View style={ITEM_TABLE_COLUMNS.qty}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
           </View>
-          <View style={{ minWidth: 150, alignItems: "flex-end", flexShrink: 0 }}>
-            <Text style={{ fontWeight: "600", color: "#475569" }}>Harga</Text>
+          <View style={ITEM_TABLE_COLUMNS.price}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
           </View>
-          <View style={{ minWidth: 170, alignItems: "flex-end", flexShrink: 0 }}>
-            <Text style={{ fontWeight: "600", color: "#475569" }}>Total</Text>
-          </View>
-        </View>
-        <View
-          style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, alignItems: "center" }}
-        >
-          <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text style={{ color: "#0F172A" }}>{order.itemName}</Text>
-          </View>
-          <View
-            style={{
-              minWidth: 96,
-              flexDirection: "row",
-              justifyContent: "flex-end",
-              alignItems: "baseline",
-              flexShrink: 0,
-            }}
-          >
-            <Text
-              style={{
-                color: "#0F172A",
-                fontVariant: ["tabular-nums"],
-                fontWeight: "600",
-              }}
-            >
-              {quantityDisplay}
-            </Text>
-            <Text
-              style={{
-                color: "#94A3B8",
-                fontSize: 12,
-                marginLeft: 4,
-                textTransform: "uppercase",
-                letterSpacing: 0.08,
-              }}
-            >
-              pcs
-            </Text>
-          </View>
-          <View style={{ minWidth: 150, alignItems: "flex-end", flexShrink: 0 }}>
-            <Text style={{ color: "#0F172A", fontVariant: ["tabular-nums"] }}>{priceDisplay}</Text>
-          </View>
-          <View style={{ minWidth: 170, alignItems: "flex-end", flexShrink: 0 }}>
-            <Text
-              style={{
-                color: "#0F172A",
-                fontVariant: ["tabular-nums"],
-                fontWeight: "600",
-              }}
-            >
-              {totalDisplay}
-            </Text>
+          <View style={ITEM_TABLE_COLUMNS.total}>
+            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
           </View>
         </View>
+        {invoiceItems.map((item, index) => {
+          const rowQuantity = formatNumberValue(item.quantity);
+          const rowPrice = formatCurrencyValue(item.price);
+          const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+          return (
+            <View
+              key={item.id ?? `item-${index}`}
+              style={{
+                flexDirection: "row",
+                paddingVertical: 12,
+                paddingHorizontal: 12,
+                alignItems: "flex-start",
+                borderTopWidth: index === 0 ? 0 : 1,
+                borderColor: "#E2E8F0",
+              }}
+            >
+              <View style={ITEM_TABLE_COLUMNS.name}>
+                <Text style={{ color: "#0F172A" }}>{item.name || "-"}</Text>
+              </View>
+              <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
+                <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
+              </View>
+              <View style={ITEM_TABLE_COLUMNS.price}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
+              </View>
+              <View style={ITEM_TABLE_COLUMNS.total}>
+                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
+              </View>
+            </View>
+          );
+        })}
       </View>
       {order.note ? (
         <View style={{ marginTop: 16 }}>
@@ -1114,11 +1515,69 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             <DetailRow label="Pemasok" value={order.supplierName || "-"} />
             <DetailRow label="Pemesan" value={order.ordererName || "-"} />
             <DetailRow label="Tanggal PO" value={formatDateDisplay(order.orderDate)} />
-            <DetailRow label="Qty" value={`${quantityDisplay} pcs`} />
-            <DetailRow label="Harga Satuan" value={priceDisplay} />
+            <DetailRow label="Jumlah Barang" value={`${itemCountDisplay} barang`} />
+            <DetailRow label="Total Qty" value={`${quantityDisplay} pcs`} />
             <DetailRow label="Nilai Total" value={totalDisplay} bold />
             <DetailRow label="Dibuat" value={formatDateDisplay(order.createdAt)} />
             <DetailRow label="Catatan" value={order.note || "-"} multiline />
+          </View>
+          <View style={{ marginTop: 20 }}>
+            <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
+            <View style={{ borderRadius: 14, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  backgroundColor: "#F1F5F9",
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                }}
+              >
+                <View style={ITEM_TABLE_COLUMNS.name}>
+                  <Text style={{ fontWeight: "600", color: "#475569" }}>Barang</Text>
+                </View>
+                <View style={ITEM_TABLE_COLUMNS.qty}>
+                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
+                </View>
+                <View style={ITEM_TABLE_COLUMNS.price}>
+                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
+                </View>
+                <View style={ITEM_TABLE_COLUMNS.total}>
+                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+                </View>
+              </View>
+              {invoiceItems.map((item, index) => {
+                const rowQuantity = formatNumberValue(item.quantity);
+                const rowPrice = formatCurrencyValue(item.price);
+                const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+                return (
+                  <View
+                    key={item.id ?? `summary-item-${index}`}
+                    style={{
+                      flexDirection: "row",
+                      paddingVertical: 12,
+                      paddingHorizontal: 12,
+                      alignItems: "flex-start",
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderColor: "#E2E8F0",
+                    }}
+                  >
+                    <View style={ITEM_TABLE_COLUMNS.name}>
+                      <Text style={{ color: "#0F172A" }}>{item.name || "-"}</Text>
+                    </View>
+                    <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+                      <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
+                      <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
+                    </View>
+                    <View style={ITEM_TABLE_COLUMNS.price}>
+                      <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
+                    </View>
+                    <View style={ITEM_TABLE_COLUMNS.total}>
+                      <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         </View>
 
