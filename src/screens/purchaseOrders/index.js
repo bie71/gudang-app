@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { captureRef } from "react-native-view-shot";
+import ViewShot from "react-native-view-shot";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
@@ -1292,14 +1292,14 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
 
   async function generateInvoiceImage() {
     try {
-      if (!invoicePreviewRef.current) {
+      const viewShot = invoicePreviewRef.current;
+      if (!viewShot || typeof viewShot.capture !== "function") {
         Alert.alert("Gagal", "Pratinjau invoice belum siap.");
         return;
       }
-      const tempUri = await captureRef(invoicePreviewRef.current, {
+      const tempUri = await viewShot.capture({
         format: "png",
         quality: 1,
-        snapshotContentContainer: true,
       });
       const fileBaseName = buildPOFileBase(order);
       const fileName = `${fileBaseName}.png`;
@@ -1609,9 +1609,9 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
       <View style={{ position: "absolute", top: -9999, left: -9999 }}>
-        <View ref={invoicePreviewRef} collapsable={false}>
+        <ViewShot ref={invoicePreviewRef} collapsable={false}>
           {order ? <InvoicePreview /> : null}
-        </View>
+        </ViewShot>
       </View>
       {actionHint ? (
         <View style={{ position: "absolute", bottom: 24, left: 0, right: 0, alignItems: "center", pointerEvents: "none" }}>
