@@ -35,11 +35,42 @@ import {
 import { buildOrderItemLabel } from "../../utils/purchaseOrders";
 import { getPOStatusStyle, PO_STATUS_OPTIONS, PO_STATUS_STYLES } from "../../constants";
 
+const ITEM_TABLE_MIN_WIDTH = 640;
+
+const ITEM_TABLE_CONTAINER_STYLE = {
+  borderRadius: 14,
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  overflow: "hidden",
+  minWidth: ITEM_TABLE_MIN_WIDTH,
+};
+
+const ITEM_TABLE_HEADER_ROW = {
+  flexDirection: "row",
+  backgroundColor: "#F1F5F9",
+  paddingVertical: 10,
+  paddingHorizontal: 12,
+  minWidth: ITEM_TABLE_MIN_WIDTH,
+};
+
+const ITEM_TABLE_ROW_BASE = {
+  flexDirection: "row",
+  paddingVertical: 12,
+  paddingHorizontal: 12,
+  alignItems: "flex-start",
+  minWidth: ITEM_TABLE_MIN_WIDTH,
+};
+
+const ITEM_TABLE_ROW_DIVIDER = {
+  borderTopWidth: 1,
+  borderColor: "#E2E8F0",
+};
+
 const ITEM_TABLE_COLUMNS = {
-  name: { flexGrow: 1, flexShrink: 1, flexBasis: 0, paddingRight: 12, minWidth: 0 },
-  qty: { flexGrow: 0.9, flexShrink: 1, flexBasis: 88, alignItems: "flex-end", minWidth: 0 },
-  price: { flexGrow: 1.1, flexShrink: 1, flexBasis: 120, alignItems: "flex-end", minWidth: 0 },
-  total: { flexGrow: 1.2, flexShrink: 1, flexBasis: 132, alignItems: "flex-end", minWidth: 0 },
+  name: { flexGrow: 1, flexShrink: 0, flexBasis: 240, paddingRight: 12, minWidth: 220 },
+  qty: { flexGrow: 0, flexShrink: 0, flexBasis: 110, alignItems: "flex-end", minWidth: 110 },
+  price: { flexGrow: 0, flexShrink: 0, flexBasis: 150, alignItems: "flex-end", minWidth: 150 },
+  total: { flexGrow: 0, flexShrink: 0, flexBasis: 160, alignItems: "flex-end", minWidth: 160 },
 };
 
 const ITEM_TABLE_NUMERIC_TEXT = {
@@ -1434,61 +1465,49 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         </Text>
         <Text style={{ color: "#0F172A", fontWeight: "700", marginTop: 4 }}>{totalDisplay}</Text>
       </View>
-      <View style={{ borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" }}>
-        <View
-          style={{
-            flexDirection: "row",
-            backgroundColor: "#F1F5F9",
-            paddingVertical: 10,
-            paddingHorizontal: 12,
-          }}
-        >
-          <View style={ITEM_TABLE_COLUMNS.name}>
-            <Text style={{ fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
-          </View>
-          <View style={ITEM_TABLE_COLUMNS.qty}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
-          </View>
-          <View style={ITEM_TABLE_COLUMNS.price}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
-          </View>
-          <View style={ITEM_TABLE_COLUMNS.total}>
-            <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
-          </View>
-        </View>
-        {invoiceItems.map((item, index) => {
-          const rowQuantity = formatNumberValue(item.quantity);
-          const rowPrice = formatCurrencyValue(item.price);
-          const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
-          return (
-            <View
-              key={item.id ?? `item-${index}`}
-              style={{
-                flexDirection: "row",
-                paddingVertical: 12,
-                paddingHorizontal: 12,
-                alignItems: "flex-start",
-                borderTopWidth: index === 0 ? 0 : 1,
-                borderColor: "#E2E8F0",
-              }}
-            >
-              <View style={ITEM_TABLE_COLUMNS.name}>
-                <Text style={{ color: "#0F172A" }}>{item.name || "-"}</Text>
-              </View>
-              <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
-                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
-                <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
-              </View>
-              <View style={ITEM_TABLE_COLUMNS.price}>
-                <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
-              </View>
-              <View style={ITEM_TABLE_COLUMNS.total}>
-                <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
-              </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
+        <View style={ITEM_TABLE_CONTAINER_STYLE}>
+          <View style={ITEM_TABLE_HEADER_ROW}>
+            <View style={ITEM_TABLE_COLUMNS.name}>
+              <Text style={{ fontWeight: "600", color: "#475569" }}>Deskripsi</Text>
             </View>
-          );
-        })}
-      </View>
+            <View style={ITEM_TABLE_COLUMNS.qty}>
+              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
+            </View>
+            <View style={ITEM_TABLE_COLUMNS.price}>
+              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
+            </View>
+            <View style={ITEM_TABLE_COLUMNS.total}>
+              <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+            </View>
+          </View>
+          {invoiceItems.map((item, index) => {
+            const rowQuantity = formatNumberValue(item.quantity);
+            const rowPrice = formatCurrencyValue(item.price);
+            const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+            return (
+              <View
+                key={item.id ?? `item-${index}`}
+                style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
+              >
+                <View style={ITEM_TABLE_COLUMNS.name}>
+                  <Text style={{ color: "#0F172A", flexShrink: 0 }}>{item.name || "-"}</Text>
+                </View>
+                <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+                  <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
+                  <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
+                </View>
+                <View style={ITEM_TABLE_COLUMNS.price}>
+                  <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
+                </View>
+                <View style={ITEM_TABLE_COLUMNS.total}>
+                  <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
       {order.note ? (
         <View style={{ marginTop: 16 }}>
           <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 6 }}>Catatan</Text>
@@ -1523,61 +1542,49 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
           </View>
           <View style={{ marginTop: 20 }}>
             <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
-            <View style={{ borderRadius: 14, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" }}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  backgroundColor: "#F1F5F9",
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                }}
-              >
-                <View style={ITEM_TABLE_COLUMNS.name}>
-                  <Text style={{ fontWeight: "600", color: "#475569" }}>Barang</Text>
-                </View>
-                <View style={ITEM_TABLE_COLUMNS.qty}>
-                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
-                </View>
-                <View style={ITEM_TABLE_COLUMNS.price}>
-                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
-                </View>
-                <View style={ITEM_TABLE_COLUMNS.total}>
-                  <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
-                </View>
-              </View>
-              {invoiceItems.map((item, index) => {
-                const rowQuantity = formatNumberValue(item.quantity);
-                const rowPrice = formatCurrencyValue(item.price);
-                const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
-                return (
-                  <View
-                    key={item.id ?? `summary-item-${index}`}
-                    style={{
-                      flexDirection: "row",
-                      paddingVertical: 12,
-                      paddingHorizontal: 12,
-                      alignItems: "flex-start",
-                      borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
-                    }}
-                  >
-                    <View style={ITEM_TABLE_COLUMNS.name}>
-                      <Text style={{ color: "#0F172A" }}>{item.name || "-"}</Text>
-                    </View>
-                    <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
-                      <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
-                      <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
-                    </View>
-                    <View style={ITEM_TABLE_COLUMNS.price}>
-                      <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
-                    </View>
-                    <View style={ITEM_TABLE_COLUMNS.total}>
-                      <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
-                    </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
+              <View style={ITEM_TABLE_CONTAINER_STYLE}>
+                <View style={ITEM_TABLE_HEADER_ROW}>
+                  <View style={ITEM_TABLE_COLUMNS.name}>
+                    <Text style={{ fontWeight: "600", color: "#475569" }}>Barang</Text>
                   </View>
-                );
-              })}
-            </View>
+                  <View style={ITEM_TABLE_COLUMNS.qty}>
+                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Qty</Text>
+                  </View>
+                  <View style={ITEM_TABLE_COLUMNS.price}>
+                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Harga</Text>
+                  </View>
+                  <View style={ITEM_TABLE_COLUMNS.total}>
+                    <Text style={{ fontWeight: "600", color: "#475569", textAlign: "right" }}>Total</Text>
+                  </View>
+                </View>
+                {invoiceItems.map((item, index) => {
+                  const rowQuantity = formatNumberValue(item.quantity);
+                  const rowPrice = formatCurrencyValue(item.price);
+                  const rowTotal = formatCurrencyValue((item.quantity || 0) * (item.price || 0));
+                  return (
+                    <View
+                      key={item.id ?? `summary-item-${index}`}
+                      style={[ITEM_TABLE_ROW_BASE, index === 0 ? null : ITEM_TABLE_ROW_DIVIDER]}
+                    >
+                      <View style={ITEM_TABLE_COLUMNS.name}>
+                        <Text style={{ color: "#0F172A", flexShrink: 0 }}>{item.name || "-"}</Text>
+                      </View>
+                      <View style={[ITEM_TABLE_COLUMNS.qty, ITEM_TABLE_QTY_CONTAINER]}>
+                        <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowQuantity}</Text>
+                        <Text style={ITEM_TABLE_QTY_UNIT_TEXT}>pcs</Text>
+                      </View>
+                      <View style={ITEM_TABLE_COLUMNS.price}>
+                        <Text style={ITEM_TABLE_NUMERIC_TEXT}>{rowPrice}</Text>
+                      </View>
+                      <View style={ITEM_TABLE_COLUMNS.total}>
+                        <Text style={ITEM_TABLE_NUMERIC_TEXT_STRONG}>{rowTotal}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
           </View>
         </View>
 
