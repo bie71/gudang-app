@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -13,10 +13,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  Animated,
+  Easing,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, { Circle, Polyline } from "react-native-svg";
 
 import StatCard from "../components/StatCard";
 import { CATEGORY_COLORS, getPOStatusStyle } from "../constants";
@@ -25,6 +29,7 @@ import {
   formatDateDisplay,
   formatDateTimeDisplay,
   formatNumberValue,
+  parseDateString,
 } from "../utils/format";
 import { exec } from "../services/database";
 import { KEYBOARD_AVOIDING_BEHAVIOR } from "../components/FormScrollContainer";
@@ -63,6 +68,10 @@ export default function DashboardScreen({ navigation }) {
   const [detailHasMore, setDetailHasMore] = useState(false);
   const [detailSearch, setDetailSearch] = useState("");
   const [detailSearchInput, setDetailSearchInput] = useState("");
+  const [activeTab, setActiveTab] = useState("summary");
+  const [tooltipTab, setTooltipTab] = useState(null);
+  const tabTransition = useRef(new Animated.Value(1)).current;
+  const tabTransitioningRef = useRef(false);
   const detailPaging = useRef({ type: null, offset: 0, search: "" });
 
   const DETAIL_PAGE_SIZE = 20;
@@ -450,6 +459,80 @@ export default function DashboardScreen({ navigation }) {
     month: "long",
     year: "numeric",
   });
+  const dashboardTabs = useMemo(
+    () => [
+      { key: "summary", label: "Ringkasan", icon: "analytics-outline" },
+      { key: "inventory", label: "Inventori", icon: "cube-outline" },
+      { key: "purchase", label: "Purchase Order", icon: "cart-outline" },
+      { key: "bookkeeping", label: "Pembukuan", icon: "book-outline" },
+      { key: "profit", label: "Profit", icon: "trending-up-outline" },
+    ],
+    [],
+  );
+  const handleTabPress = useCallback(
+    key => {
+      if (key === activeTab) {
+        setTooltipTab(null);
+        return;
+      }
+      if (tabTransitioningRef.current) {
+        return;
+      }
+      tabTransitioningRef.current = true;
+      Animated.timing(tabTransition, {
+        toValue: 0,
+        duration: 160,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => {
+        tabTransition.setValue(0);
+        setActiveTab(key);
+        setTooltipTab(null);
+        Animated.timing(tabTransition, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start(() => {
+          tabTransitioningRef.current = false;
+        });
+      });
+    },
+    [activeTab, tabTransition],
+  );
+  const tabContentTranslateY = tabTransition.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
+  const chartDimensions = useMemo(() => {
+    const windowWidth = Dimensions.get("window").width || 360;
+    const width = Math.max(windowWidth - 64, 240);
+    return { width, height: 160 };
+  }, []);
+  const bookkeepingTrend = useMemo(() => {
+    if (!recentBookkeeping.length) return [];
+    const totals = new Map();
+    recentBookkeeping.forEach(entry => {
+      if (!entry?.entryDate) return;
+      const parsed = parseDateString(entry.entryDate);
+      if (Number.isNaN(parsed.getTime())) return;
+      const iso = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+      const amount = Number(entry.amount ?? 0);
+      totals.set(iso, (totals.get(iso) || 0) + amount);
+    });
+    const sorted = Array.from(totals.entries())
+      .map(([dateKey, total]) => {
+        const parsed = parseDateString(dateKey);
+        const shortLabel = parsed.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+        return {
+          date: dateKey,
+          total,
+          shortLabel,
+          displayDate: formatDateDisplay(dateKey),
+          sortKey: parsed.getTime(),
+        };
+      })
+      .filter(item => Number.isFinite(item.sortKey))
+      .sort((a, b) => a.sortKey - b.sortKey);
+    return sorted.slice(-7);
+  }, [recentBookkeeping]);
 
   async function load() {
     try {
@@ -1327,6 +1410,741 @@ export default function DashboardScreen({ navigation }) {
   const displayItemProfit = itemProfitLeaders.slice(0, 5);
   const displayPoProfit = poProfitLeaders.slice(0, 5);
 
+  const renderStatsGrid = () => (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+      {stats.map(({ key: cardKey, ...cardProps }) => (
+        <StatCard key={cardKey} {...cardProps} onPress={() => openDetail(cardKey)} />
+      ))}
+    </View>
+  );
+
+  const renderCategoryBarAnalytics = () => {
+    const topCategories = categoryStats.slice(0, 5);
+    const maxStock = topCategories.reduce((max, cat) => Math.max(max, Number(cat.totalStock ?? 0)), 0);
+    return (
+      <View
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: 16,
+          padding: 20,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          shadowColor: "#0F172A",
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 2,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Distribusi Stok per Kategori</Text>
+            <Text style={{ color: "#64748B" }}>
+              {topCategories.length
+                ? "Top 5 kategori berdasarkan jumlah stok"
+                : "Belum ada data kategori"}
+            </Text>
+          </View>
+          {topCategories.length ? (
+            <TouchableOpacity onPress={() => setActiveTab("inventory")}>
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>Ke tab inventori</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {topCategories.length ? (
+          <View style={{ gap: 14 }}>
+            {topCategories.map((cat, index) => {
+              const totalStock = Number(cat.totalStock ?? 0);
+              const ratio = maxStock > 0 ? totalStock / maxStock : 0;
+              const widthPercent = Math.min(100, Math.max(ratio * 100, totalStock > 0 ? 6 : 0));
+              const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+              return (
+                <View key={`${cat.label || "Tanpa Kategori"}-${index}`} style={{ gap: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <Text
+                      numberOfLines={1}
+                      style={{ fontWeight: "600", color: "#0F172A", flex: 1, paddingRight: 12 }}
+                    >
+                      {cat.label}
+                    </Text>
+                    <Text style={{ color: "#475569", fontWeight: "600" }}>{formatNumber(totalStock)} stok</Text>
+                  </View>
+                  <View style={{ height: 10, borderRadius: 999, backgroundColor: "#E2E8F0", overflow: "hidden" }}>
+                    <View style={{ width: `${widthPercent}%`, height: "100%", backgroundColor: color }} />
+                  </View>
+                  <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                    {`${formatNumber(Number(cat.totalItems ?? 0))} barang • ${formatCurrency(Number(cat.totalValue ?? 0))}`}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={{ paddingVertical: 12 }}>
+            <Text style={{ color: "#94A3B8" }}>Belum ada data kategori. Tambahkan barang terlebih dahulu.</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderBookkeepingTrendAnalytics = () => {
+    const data = bookkeepingTrend;
+    const hasData = data.length > 0;
+    const { width: chartWidth, height: chartHeight } = chartDimensions;
+    const totals = data.map(item => Number(item.total ?? 0));
+    const maxAmount = totals.length ? Math.max(...totals, 0) : 0;
+    const minAmount = totals.length ? Math.min(...totals, 0) : 0;
+    const range = maxAmount - minAmount || 1;
+    const coordinates = data.map((item, index) => {
+      const value = Number(item.total ?? 0);
+      const x = data.length <= 1 ? chartWidth / 2 : (chartWidth / Math.max(data.length - 1, 1)) * index;
+      const y = chartHeight - ((value - minAmount) / range) * chartHeight;
+      return {
+        x: Number.isFinite(x) ? x : 0,
+        y: Number.isFinite(y) ? Math.min(chartHeight, Math.max(0, y)) : chartHeight,
+        item,
+      };
+    });
+    const linePoints = coordinates.map(point => `${point.x},${point.y}`).join(" ");
+    const totalAmount = totals.reduce((sum, value) => sum + value, 0);
+    const latest = data[data.length - 1];
+    const formattedTotal =
+      totalAmount >= 0
+        ? formatCurrency(totalAmount)
+        : `- ${formatCurrency(Math.abs(totalAmount))}`;
+    const latestLabel = latest
+      ? latest.total >= 0
+        ? `Terbaru: + ${formatCurrency(latest.total)}`
+        : `Terbaru: - ${formatCurrency(Math.abs(latest.total))}`
+      : "Belum ada catatan";
+    return (
+      <View
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: 16,
+          padding: 20,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          shadowColor: "#0F172A",
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 2,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Tren Pembukuan 7 Hari</Text>
+            <Text style={{ color: "#64748B" }}>
+              {hasData ? `${data.length} hari terakhir • Total ${formattedTotal}` : "Belum ada catatan pembukuan"}
+            </Text>
+          </View>
+          {hasData ? (
+            <TouchableOpacity onPress={() => setActiveTab("bookkeeping")}>
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>Ke tab pembukuan</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {hasData ? (
+          <>
+            <View
+              style={{
+                backgroundColor: "#F8FAFC",
+                borderRadius: 12,
+                paddingVertical: 16,
+                paddingHorizontal: 12,
+              }}
+            >
+              <Svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
+                {linePoints ? (
+                  <Polyline
+                    points={linePoints}
+                    fill="none"
+                    stroke="#2563EB"
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                ) : null}
+                {coordinates.map(({ x, y, item }, index) => (
+                  <Circle
+                    key={`${item.date}-${index}`}
+                    cx={x}
+                    cy={y}
+                    r={4}
+                    fill="#2563EB"
+                  />
+                ))}
+              </Svg>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
+              {coordinates.map(({ item }, index) => (
+                <View key={`${item.date}-${index}-label`} style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ color: "#64748B", fontSize: 12 }}>{item.shortLabel}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 12 }}>{latestLabel}</Text>
+          </>
+        ) : (
+          <View style={{ paddingVertical: 12 }}>
+            <Text style={{ color: "#94A3B8" }}>Catatan pembukuan akan tampil di sini setelah Anda menambah transaksi.</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderProfitSnapshot = () => {
+    const items = [
+      {
+        key: "item",
+        label: "Profit Barang",
+        description: "Akumulasi dari transaksi stok keluar",
+        value: Number(metrics.itemProfitTotal ?? 0),
+      },
+      {
+        key: "po",
+        label: "Profit Purchase Order",
+        description: "Akumulasi dari PO selesai",
+        value: Number(metrics.poProfitTotal ?? 0),
+      },
+    ];
+    const maxAbs = items.reduce((max, item) => Math.max(max, Math.abs(item.value)), 0);
+    const hasInsight = maxAbs > 0;
+    return (
+      <View
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: 16,
+          padding: 20,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          shadowColor: "#0F172A",
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 2,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Sorotan Profit</Text>
+            <Text style={{ color: "#64748B" }}>
+              {hasInsight ? "Perbandingan sumber profit utama" : "Belum ada data profit"}
+            </Text>
+          </View>
+          {hasInsight ? (
+            <TouchableOpacity onPress={() => setActiveTab("profit")}>
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>Ke tab profit</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        <View style={{ gap: 16 }}>
+          {items.map(item => {
+            const positive = item.value >= 0;
+            const barColor = positive ? "#16A34A" : "#DC2626";
+            const widthPercent = maxAbs ? Math.min(100, Math.max((Math.abs(item.value) / maxAbs) * 100, item.value !== 0 ? 6 : 0)) : 0;
+            const formattedValue = positive
+              ? `+ ${formatCurrency(item.value)}`
+              : `- ${formatCurrency(Math.abs(item.value))}`;
+            return (
+              <View key={item.key} style={{ gap: 8 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ fontWeight: "600", color: "#0F172A" }}>{item.label}</Text>
+                  <Text style={{ fontWeight: "700", color: barColor }}>{formattedValue}</Text>
+                </View>
+                <View style={{ height: 10, borderRadius: 999, backgroundColor: "#E2E8F0", overflow: "hidden" }}>
+                  <View style={{ width: `${widthPercent}%`, height: "100%", backgroundColor: barColor }} />
+                </View>
+                <Text style={{ color: "#94A3B8", fontSize: 12 }}>{item.description}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const renderCategorySummaryCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Ringkasan Kategori</Text>
+          <Text style={{ color: "#64748B" }}>{categoryStats.length ? `${categoryStats.length} kategori` : "Belum ada data"}</Text>
+        </View>
+        {categoryStats.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("categoriesFull")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {categoryStats.length ? (
+        displayCategories.map((cat, index) => (
+          <View
+            key={`${cat.label}-${index}`}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+              borderTopWidth: index === 0 ? 0 : 1,
+              borderColor: "#E2E8F0",
+            }}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 14,
+              }}
+            >
+              <MaterialCommunityIcons name="shape-outline" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: "700", color: "#0F172A" }}>{cat.label}</Text>
+              <Text style={{ color: "#64748B", fontSize: 12 }}>{`${formatNumber(cat.totalItems)} barang • ${formatNumber(cat.totalStock)} stok`}</Text>
+            </View>
+            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(cat.totalValue)}</Text>
+          </View>
+        ))
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>Belum ada data kategori. Tambahkan barang terlebih dahulu.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderTopItemsCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Barang Tersedia</Text>
+          <Text style={{ color: "#64748B" }}>{topItems.length ? `${topItems.length} item` : "Belum ada stok"}</Text>
+        </View>
+        {topItems.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("itemsFull")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {topItems.length ? (
+        displayTopItems.map((item, index) => (
+          <View
+            key={item.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+              borderTopWidth: index === 0 ? 0 : 1,
+              borderColor: "#E2E8F0",
+            }}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: "#E0F2FE",
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 14,
+              }}
+            >
+              <Ionicons name="cube" size={22} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
+              <Text style={{ color: "#64748B", fontSize: 12 }}>{`${item.category || "Tanpa kategori"} • ${formatNumber(item.stock)} stok`}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(item.totalValue)}</Text>
+              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`@ ${formatCurrency(item.price)}`}</Text>
+            </View>
+          </View>
+        ))
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>Belum ada stok tersimpan. Tambahkan barang untuk melihat ringkasan.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderBookkeepingCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Pembukuan Terbaru</Text>
+          <Text style={{ color: "#64748B" }}>
+            {recentBookkeeping.length ? `${recentBookkeeping.length} catatan` : "Belum ada catatan"}
+          </Text>
+        </View>
+        {recentBookkeeping.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("bookkeepingFull")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {recentBookkeeping.length ? (
+        displayRecentBookkeeping.map((entry, index) => {
+          const noteText = entry.note && String(entry.note).trim() ? String(entry.note) : "";
+          const subtitle = noteText
+            ? `${formatDateDisplay(entry.entryDate)} • ${noteText}`
+            : formatDateDisplay(entry.entryDate);
+          return (
+            <TouchableOpacity
+              key={entry.id}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate("BookkeepingDetail", {
+                  entryId: entry.id,
+                  initialEntry: entry,
+                  onDone: load,
+                })
+              }
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingVertical: 12,
+                borderTopWidth: index === 0 ? 0 : 1,
+                borderColor: "#E2E8F0",
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: "#E0E7FF",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 14,
+                }}
+              >
+                <Ionicons name="wallet-outline" size={22} color="#4338CA" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
+                <Text style={{ color: "#64748B", fontSize: 12 }}>{subtitle}</Text>
+              </View>
+              <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(entry.amount)}</Text>
+            </TouchableOpacity>
+          );
+        })
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>Belum ada catatan pembukuan.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderItemProfitCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Barang</Text>
+          <Text style={{ color: "#64748B" }}>
+            {itemProfitLeaders.length ? `${itemProfitLeaders.length} barang` : "Belum ada data"}
+          </Text>
+        </View>
+        {itemProfitLeaders.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("itemProfit")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {displayItemProfit.length ? (
+        displayItemProfit.map((entry, index) => {
+          const profit = Number(entry.totalProfit ?? 0);
+          const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
+          const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
+          const qtyLabel = formatNumber(entry.totalQty ?? 0);
+          const lastLabel = entry.lastActivity
+            ? formatDateTimeDisplay(entry.lastActivity)
+            : "Belum ada transaksi";
+          const categoryLabel = entry.category && entry.category.trim() ? entry.category : "Tanpa kategori";
+          return (
+            <TouchableOpacity
+              key={`item-profit-${entry.itemId ?? index}`}
+              onPress={() => openItemProfitDetail(entry)}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                paddingVertical: 12,
+                borderTopWidth: index === 0 ? 0 : 1,
+                borderColor: "#E2E8F0",
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: "#DCFCE7",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 14,
+                }}
+              >
+                <Ionicons name="trending-up-outline" size={22} color="#16A34A" />
+              </View>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
+                <Text style={{ color: "#64748B", fontSize: 12 }}>{`${categoryLabel} • ${qtyLabel} pcs`}</Text>
+                <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Terakhir: ${lastLabel}`}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>Belum ada data profit barang. Catat transaksi keluar untuk melihat hasil.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderPoProfitCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Purchase Order</Text>
+          <Text style={{ color: "#64748B" }}>
+            {poProfitLeaders.length ? `${poProfitLeaders.length} PO selesai` : "Belum ada data"}
+          </Text>
+        </View>
+        {poProfitLeaders.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("poProfit")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {displayPoProfit.length ? (
+        displayPoProfit.map((entry, index) => {
+          const profit = Number(entry.totalProfit ?? 0);
+          const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
+          const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
+          const revenueLabel = formatCurrency(entry.totalValue ?? 0);
+          const qtyLabel = formatNumber(entry.totalQuantity ?? 0);
+          const partyLabel = entry.supplierName && entry.supplierName.trim()
+            ? `${entry.ordererName || "Tanpa pemesan"} • ${entry.supplierName}`
+            : entry.ordererName || "Tanpa pemesan";
+          const completedLabel = entry.completedAt
+            ? formatDateTimeDisplay(entry.completedAt)
+            : formatDateDisplay(entry.orderDate);
+          const itemLabel = buildOrderItemLabel(
+            entry.primaryItemName || "",
+            entry.itemCount || (entry.primaryItemName ? 1 : 0),
+          );
+          return (
+            <TouchableOpacity
+              key={`po-profit-${entry.id}`}
+              onPress={() => openPoProfitDetail(entry)}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                paddingVertical: 12,
+                borderTopWidth: index === 0 ? 0 : 1,
+                borderColor: "#E2E8F0",
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: "#FEF3C7",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 14,
+                }}
+              >
+                <Ionicons name="pricetag-outline" size={22} color="#D97706" />
+              </View>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontWeight: "700", color: "#0F172A" }}>{itemLabel}</Text>
+                <Text style={{ color: "#64748B", fontSize: 12 }}>{`${partyLabel} • ${completedLabel}`}</Text>
+                <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Qty: ${qtyLabel} pcs • Omzet ${revenueLabel}`}</Text>
+              </View>
+              <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
+            </TouchableOpacity>
+          );
+        })
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>
+            Belum ada PO selesai dengan data profit. Tandai PO selesai untuk melihat ringkasan.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderRecentPoCard = () => (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#0F172A",
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>PO Terbaru</Text>
+          <Text style={{ color: "#64748B" }}>{recentPOs.length ? `${recentPOs.length} data` : "Belum ada PO"}</Text>
+        </View>
+        {recentPOs.length ? (
+          <TouchableOpacity onPress={() => openPaginatedDetail("poFull")}>
+            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {recentPOs.length ? (
+        displayRecentPOs.map((po, index) => {
+          const totalValue = Number(po.totalValue ?? 0);
+          const totalQuantity = Number(po.totalQuantity ?? 0);
+          const itemsCount = Number(po.itemsCount ?? 0);
+          const statusStyle = getPOStatusStyle(po.status);
+          return (
+            <View
+              key={po.id}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingVertical: 12,
+                borderTopWidth: index === 0 ? 0 : 1,
+                borderColor: "#E2E8F0",
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: "#FEF3C7",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 14,
+                }}
+              >
+                <Ionicons name="cart-outline" size={22} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: "700", color: "#0F172A" }}>{po.itemName}</Text>
+                <Text style={{ color: "#64748B", fontSize: 12 }}>{`${po.ordererName || "Tanpa pemesan"} • ${formatDateDisplay(po.orderDate)} • ${statusStyle.label}`}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(totalValue)}</Text>
+                <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${formatNumber(itemsCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumber(totalQuantity)} pcs`}</Text>
+              </View>
+            </View>
+          );
+        })
+      ) : (
+        <View style={{ paddingVertical: 16 }}>
+          <Text style={{ color: "#94A3B8" }}>Belum ada purchase order tercatat.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const activeTabSections = (() => {
+    switch (activeTab) {
+      case "summary":
+        return [
+          renderStatsGrid(),
+          renderCategoryBarAnalytics(),
+          renderBookkeepingTrendAnalytics(),
+          renderProfitSnapshot(),
+        ];
+      case "inventory":
+        return [renderCategorySummaryCard(), renderTopItemsCard()];
+      case "purchase":
+        return [renderRecentPoCard()];
+      case "bookkeeping":
+        return [renderBookkeepingCard()];
+      case "profit":
+        return [renderItemProfitCard(), renderPoProfitCard()];
+      default:
+        return [renderStatsGrid()];
+    }
+  })();
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", marginBottom: -tabBarHeight }}>
       <ScrollView
@@ -1381,461 +2199,71 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-            {stats.map(({ key: cardKey, ...cardProps }) => (
-              <StatCard key={cardKey} {...cardProps} onPress={() => openDetail(cardKey)} />
-            ))}
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Ringkasan Kategori</Text>
-                <Text style={{ color: "#64748B" }}>{categoryStats.length ? `${categoryStats.length} kategori` : "Belum ada data"}</Text>
-              </View>
-              {categoryStats.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("categoriesFull")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            {categoryStats.length ? (
-              displayCategories.map((cat, index) => (
-                <View
-                  key={`${cat.label}-${index}`}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingVertical: 12,
-                    borderTopWidth: index === 0 ? 0 : 1,
-                    borderColor: "#E2E8F0",
-                  }}
-                >
-                  <View
+          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+            {dashboardTabs.map(({ key, label, icon }) => {
+              const isActive = key === activeTab;
+              const showTooltip = tooltipTab === key;
+              return (
+                <View key={key} style={{ flex: 1, alignItems: "center" }}>
+                  <View style={{ position: "relative", alignItems: "center", paddingTop: 12 }}>
+                    {showTooltip && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          transform: [{ translateY: -24 }],
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                          backgroundColor: "rgba(15,23,42,0.92)",
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>{label}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => handleTabPress(key)}
+                      onLongPress={() => setTooltipTab(key)}
+                      onPressOut={() => setTooltipTab(null)}
+                      delayLongPress={200}
+                      activeOpacity={0.85}
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        backgroundColor: isActive ? "#2563EB" : "#E2E8F0",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: isActive ? 0 : 1,
+                        borderColor: "#CBD5F5",
+                      }}
+                    >
+                      <Ionicons name={icon} size={isActive ? 26 : 24} color={isActive ? "#fff" : "#334155"} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text
                     style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginRight: 14,
+                      marginTop: 10,
+                      color: isActive ? "#2563EB" : "#64748B",
+                      fontSize: 12,
+                      fontWeight: "600",
+                      textAlign: "center",
                     }}
                   >
-                    <MaterialCommunityIcons name="shape-outline" size={22} color="#fff" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "700", color: "#0F172A" }}>{cat.label}</Text>
-                    <Text style={{ color: "#64748B", fontSize: 12 }}>{`${formatNumber(cat.totalItems)} barang • ${formatNumber(cat.totalStock)} stok`}</Text>
-                  </View>
-                  <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(cat.totalValue)}</Text>
+                    {label}
+                  </Text>
                 </View>
-              ))
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>Belum ada data kategori. Tambahkan barang terlebih dahulu.</Text>
-              </View>
-            )}
+              );
+            })}
           </View>
 
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Barang Tersedia</Text>
-                <Text style={{ color: "#64748B" }}>{topItems.length ? `${topItems.length} item` : "Belum ada stok"}</Text>
-              </View>
-              {topItems.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("itemsFull")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
+          <Animated.View style={{ opacity: tabTransition, transform: [{ translateY: tabContentTranslateY }] }}>
+            <View style={{ gap: 16 }}>
+              {activeTabSections.map((section, index) => (
+                <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
+              ))}
             </View>
-            {topItems.length ? (
-              displayTopItems.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingVertical: 12,
-                    borderTopWidth: index === 0 ? 0 : 1,
-                    borderColor: "#E2E8F0",
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      backgroundColor: "#E0F2FE",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginRight: 14,
-                    }}
-                  >
-                    <Ionicons name="cube" size={22} color="#0284C7" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
-                    <Text style={{ color: "#64748B", fontSize: 12 }}>{`${item.category || "Tanpa kategori"} • ${formatNumber(item.stock)} stok`}</Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(item.totalValue)}</Text>
-                    <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`@ ${formatCurrency(item.price)}`}</Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>Belum ada stok tersimpan. Tambahkan barang untuk melihat ringkasan.</Text>
-              </View>
-            )}
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Pembukuan Terbaru</Text>
-                <Text style={{ color: "#64748B" }}>
-                  {recentBookkeeping.length ? `${recentBookkeeping.length} catatan` : "Belum ada catatan"}
-                </Text>
-              </View>
-              {recentBookkeeping.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("bookkeepingFull")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            {recentBookkeeping.length ? (
-              displayRecentBookkeeping.map((entry, index) => {
-                const noteText = entry.note && String(entry.note).trim() ? String(entry.note) : "";
-                const subtitle = noteText
-                  ? `${formatDateDisplay(entry.entryDate)} • ${noteText}`
-                  : formatDateDisplay(entry.entryDate);
-                return (
-                  <TouchableOpacity
-                    key={entry.id}
-                    activeOpacity={0.85}
-                    onPress={() =>
-                      navigation.navigate("BookkeepingDetail", {
-                        entryId: entry.id,
-                        initialEntry: entry,
-                        onDone: load,
-                      })
-                    }
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingVertical: 12,
-                      borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 14,
-                        backgroundColor: "#E0E7FF",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 14,
-                      }}
-                    >
-                      <Ionicons name="wallet-outline" size={22} color="#4338CA" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
-                      <Text style={{ color: "#64748B", fontSize: 12 }}>{subtitle}</Text>
-                    </View>
-                    <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(entry.amount)}</Text>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>Belum ada catatan pembukuan.</Text>
-              </View>
-            )}
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Barang</Text>
-                <Text style={{ color: "#64748B" }}>
-                  {itemProfitLeaders.length ? `${itemProfitLeaders.length} barang` : "Belum ada data"}
-                </Text>
-              </View>
-              {itemProfitLeaders.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("itemProfit")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            {displayItemProfit.length ? (
-              displayItemProfit.map((entry, index) => {
-                const profit = Number(entry.totalProfit ?? 0);
-                const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
-                const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
-                const qtyLabel = formatNumber(entry.totalQty ?? 0);
-                const lastLabel = entry.lastActivity
-                  ? formatDateTimeDisplay(entry.lastActivity)
-                  : "Belum ada transaksi";
-                const categoryLabel = entry.category && entry.category.trim() ? entry.category : "Tanpa kategori";
-                return (
-                  <TouchableOpacity
-                    key={`item-profit-${entry.itemId ?? index}`}
-                    onPress={() => openItemProfitDetail(entry)}
-                    activeOpacity={0.85}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "flex-start",
-                      paddingVertical: 12,
-                      borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 14,
-                        backgroundColor: "#DCFCE7",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 14,
-                      }}
-                    >
-                      <Ionicons name="trending-up-outline" size={22} color="#16A34A" />
-                    </View>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
-                      <Text style={{ color: "#64748B", fontSize: 12 }}>{`${categoryLabel} • ${qtyLabel} pcs`}</Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Terakhir: ${lastLabel}`}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>Belum ada data profit barang. Catat transaksi keluar untuk melihat hasil.</Text>
-              </View>
-            )}
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Profit Purchase Order</Text>
-                <Text style={{ color: "#64748B" }}>
-                  {poProfitLeaders.length ? `${poProfitLeaders.length} PO selesai` : "Belum ada data"}
-                </Text>
-              </View>
-              {poProfitLeaders.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("poProfit")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            {displayPoProfit.length ? (
-              displayPoProfit.map((entry, index) => {
-                const profit = Number(entry.totalProfit ?? 0);
-                const profitLabel = `${profit >= 0 ? "+" : "-"} ${formatCurrency(Math.abs(profit))}`;
-                const profitColor = profit >= 0 ? "#16A34A" : "#DC2626";
-                const revenueLabel = formatCurrency(entry.totalValue ?? 0);
-                const qtyLabel = formatNumber(entry.totalQuantity ?? 0);
-                const partyLabel = entry.supplierName && entry.supplierName.trim()
-                  ? `${entry.ordererName || "Tanpa pemesan"} • ${entry.supplierName}`
-                  : entry.ordererName || "Tanpa pemesan";
-                const completedLabel = entry.completedAt
-                  ? formatDateTimeDisplay(entry.completedAt)
-                  : formatDateDisplay(entry.orderDate);
-                const itemLabel = buildOrderItemLabel(
-                  entry.primaryItemName || "",
-                  entry.itemCount || (entry.primaryItemName ? 1 : 0),
-                );
-                return (
-                  <TouchableOpacity
-                    key={`po-profit-${entry.id ?? index}`}
-                    onPress={() => openPoProfitDetail(entry)}
-                    activeOpacity={0.85}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "flex-start",
-                      paddingVertical: 12,
-                      borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 14,
-                        backgroundColor: "#FFE4E6",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 14,
-                      }}
-                    >
-                      <MaterialCommunityIcons name="chart-line" size={22} color="#F97316" />
-                    </View>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{itemLabel}</Text>
-                      <Text style={{ color: "#64748B", fontSize: 12 }}>{partyLabel}</Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{`Selesai: ${completedLabel}`}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={{ color: profitColor, fontWeight: "700" }}>{profitLabel}</Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${revenueLabel} • ${qtyLabel} pcs`}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>
-                  Belum ada PO selesai dengan data profit. Tandai PO selesai untuk melihat ringkasan.
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 16,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              shadowColor: "#0F172A",
-              shadowOpacity: 0.05,
-              shadowRadius: 12,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>PO Terbaru</Text>
-                <Text style={{ color: "#64748B" }}>{recentPOs.length ? `${recentPOs.length} data` : "Belum ada PO"}</Text>
-              </View>
-              {recentPOs.length ? (
-                <TouchableOpacity onPress={() => openPaginatedDetail("poFull")}>
-                  <Text style={{ color: "#2563EB", fontWeight: "600" }}>Lihat semua</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            {recentPOs.length ? (
-              displayRecentPOs.map((po, index) => {
-                const totalValue = Number(po.totalValue ?? 0);
-                const totalQuantity = Number(po.totalQuantity ?? 0);
-                const itemsCount = Number(po.itemsCount ?? 0);
-                const statusStyle = getPOStatusStyle(po.status);
-                return (
-                  <View
-                    key={po.id}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingVertical: 12,
-                      borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 14,
-                        backgroundColor: "#FEF3C7",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 14,
-                      }}
-                    >
-                      <Ionicons name="cart-outline" size={22} color="#D97706" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: "700", color: "#0F172A" }}>{po.itemName}</Text>
-                      <Text style={{ color: "#64748B", fontSize: 12 }}>{`${po.ordererName || "Tanpa pemesan"} • ${formatDateDisplay(po.orderDate)} • ${statusStyle.label}`}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(totalValue)}</Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${formatNumber(itemsCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumber(totalQuantity)} pcs`}</Text>
-                    </View>
-                  </View>
-                );
-              })
-            ) : (
-              <View style={{ paddingVertical: 16 }}>
-                <Text style={{ color: "#94A3B8" }}>Belum ada purchase order tercatat.</Text>
-              </View>
-            )}
-          </View>
+          </Animated.View>
         </View>
       </ScrollView>
       <Modal visible={detailModal.visible} transparent animationType="fade" onRequestClose={closeDetail} statusBarTranslucent>
