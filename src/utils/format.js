@@ -53,7 +53,7 @@ export function safeSlug(text) {
 
 export function buildPOFileBase(order) {
   const ordererSlug = safeSlug(order?.ordererName || "pemesan");
-  const itemSlug = safeSlug(order?.itemName || "barang");
+  const itemSlug = safeSlug(order?.primaryItemName || order?.itemName || "barang");
   const dateSlug = safeSlug(formatDateInputValue(new Date()));
   return `${ordererSlug}_${itemSlug}_${dateSlug}`;
 }
