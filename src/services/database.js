@@ -51,14 +51,67 @@ export async function ensureDbReady() {
         "price INTEGER NOT NULL DEFAULT 0," +
         "FOREIGN KEY(order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE" +
         ");";
+      const createBookkeepingSql =
+        "CREATE TABLE IF NOT EXISTS bookkeeping_entries (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "name TEXT NOT NULL," +
+        "amount INTEGER NOT NULL DEFAULT 0," +
+        "entry_date TEXT NOT NULL," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
+        ");";
+      const createBookkeepingHistorySql =
+        "CREATE TABLE IF NOT EXISTS bookkeeping_entry_history (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "entry_id INTEGER NOT NULL," +
+        "change_amount INTEGER NOT NULL," +
+        "type TEXT NOT NULL," +
+        "note TEXT," +
+        "previous_amount INTEGER," +
+        "new_amount INTEGER," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "FOREIGN KEY(entry_id) REFERENCES bookkeeping_entries(id) ON DELETE CASCADE" +
+        ");";
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
       await db.execAsync(createPurchaseOrderSql);
       await db.execAsync(createPurchaseOrderItemsSql);
+      await db.execAsync(createBookkeepingSql);
+      await db.execAsync(createBookkeepingHistorySql);
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
       } catch (error) {
         // ignore if column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE items ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE stock_history ADD COLUMN unit_price INTEGER");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE stock_history ADD COLUMN unit_cost INTEGER");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE stock_history ADD COLUMN profit_amount INTEGER NOT NULL DEFAULT 0");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_order_items ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN completed_at TEXT");
+      } catch (error) {
+        // column already exists
       }
       try {
         await db.execAsync("UPDATE purchase_orders SET status = 'PROGRESS' WHERE status = 'PENDING'");
