@@ -14,8 +14,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  Animated,
-  Easing,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -70,8 +68,6 @@ export default function DashboardScreen({ navigation }) {
   const [detailSearchInput, setDetailSearchInput] = useState("");
   const [activeTab, setActiveTab] = useState("summary");
   const [tooltipTab, setTooltipTab] = useState(null);
-  const tabTransition = useRef(new Animated.Value(1)).current;
-  const tabTransitioningRef = useRef(false);
   const detailPaging = useRef({ type: null, offset: 0, search: "" });
 
   const DETAIL_PAGE_SIZE = 20;
@@ -469,37 +465,16 @@ export default function DashboardScreen({ navigation }) {
     ],
     [],
   );
-  const easeIn = useMemo(() => Easing.in(Easing.ease), []);
   const handleTabPress = useCallback(
     key => {
       if (key === activeTab) {
         setTooltipTab(null);
         return;
       }
-      if (tabTransitioningRef.current) {
-        return;
-      }
-      tabTransitioningRef.current = true;
-      Animated.timing(tabTransition, {
-        toValue: 0.8,
-        duration: 100,
-        easing: easeIn,
-        useNativeDriver: true,
-      }).start(() => {
-        tabTransition.setValue(0.9);
-        setActiveTab(key);
-        setTooltipTab(null);
-        Animated.timing(tabTransition, {
-          toValue: 1,
-          duration: 120,
-          easing: easeIn,
-          useNativeDriver: true,
-        }).start(() => {
-          tabTransitioningRef.current = false;
-        });
-      });
+      setActiveTab(key);
+      setTooltipTab(null);
     },
-    [activeTab, easeIn, tabTransition],
+    [activeTab],
   );
   const chartDimensions = useMemo(() => {
     const windowWidth = Dimensions.get("window").width || 360;
@@ -2257,13 +2232,11 @@ export default function DashboardScreen({ navigation }) {
             })}
           </View>
 
-          <Animated.View style={{ opacity: tabTransition }}>
-            <View style={{ gap: 16 }}>
-              {activeTabSections.map((section, index) => (
-                <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
-              ))}
-            </View>
-          </Animated.View>
+          <View style={{ gap: 16 }}>
+            {activeTabSections.map((section, index) => (
+              <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
+            ))}
+          </View>
         </View>
       </ScrollView>
       <Modal visible={detailModal.visible} transparent animationType="fade" onRequestClose={closeDetail} statusBarTranslucent>

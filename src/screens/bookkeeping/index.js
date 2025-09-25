@@ -10,6 +10,8 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -326,8 +328,6 @@ export function BookkeepingScreen({ navigation }) {
             <title>Laporan Pembukuan</title>
             <style>
               * { box-sizing: border-box; font-family: 'Inter', 'Helvetica', 'Arial', sans-serif; }
-              body { background: #f1f5f9; color: #0f172a; margin: 0; padding: 24px; }
-              .card { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 24px; padding: 32px; box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12); }
               .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
               .header h1 { margin: 0; font-size: 28px; }
               .range { color: #64748b; margin-top: 4px; font-size: 14px; }
@@ -335,7 +335,7 @@ export function BookkeepingScreen({ navigation }) {
               .summary-item { background: #f8fafc; border-radius: 16px; padding: 16px 20px; flex: 1 1 220px; }
               .summary-item h2 { margin: 0 0 8px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
               .summary-item p { margin: 0; font-size: 18px; font-weight: 600; }
-              table { width: 100%; border-collapse: collapse; }
+              table { width: 100%; border-collapse: collapse; background: #e8edf1ff;}
               thead { background: #f8fafc; }
               th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
               th { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
@@ -353,7 +353,7 @@ export function BookkeepingScreen({ navigation }) {
               <div class="header">
                 <div>
                   <p style="letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; margin: 0 0 8px;">Laporan</p>
-                  <h1>Pembukuan Gudang</h1>
+                  <h1>Laporan Pembukuan</h1>
                   <p class="range">${escapeHtml(startDisplay)} - ${escapeHtml(endDisplay)}</p>
                 </div>
               </div>
@@ -639,7 +639,9 @@ export function BookkeepingScreen({ navigation }) {
           onPress={closeAdjustModal}
           style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.45)" }}
         />
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 24 : 0}
           style={{
             position: "absolute",
             left: 0,
@@ -648,98 +650,102 @@ export function BookkeepingScreen({ navigation }) {
             backgroundColor: "#fff",
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
-            padding: 20,
-            paddingBottom: 28,
+            paddingHorizontal: 20,
+            paddingTop: 20,
+            paddingBottom: Platform.OS === "ios" ? 32 : 24,
             shadowColor: "#0F172A",
             shadowOpacity: 0.1,
             shadowRadius: 18,
             elevation: 6,
+            maxHeight: "80%",
           }}
         >
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
-              <Text style={{ color: "#64748B", marginTop: 4 }}>{adjustModal.entry?.name || "-"}</Text>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
+                <Text style={{ color: "#64748B", marginTop: 4 }}>{adjustModal.entry?.name || "-"}</Text>
+              </View>
+              <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
-              <Ionicons name="close" size={22} color="#94A3B8" />
+            <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
+              Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
+            </Text>
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
+              <TextInput
+                value={adjustModal.amount}
+                onChangeText={handleAdjustAmountChange}
+                placeholder="contoh: 250000"
+                keyboardType="numeric"
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  height: 44,
+                }}
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
+              <TextInput
+                value={adjustModal.note}
+                onChangeText={handleAdjustNoteChange}
+                placeholder="contoh: Penyesuaian kas"
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  minHeight: 96,
+                  textAlignVertical: "top",
+                }}
+                placeholderTextColor="#94A3B8"
+                multiline
+              />
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
+              <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
+              <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleAdjustSubmit}
+              disabled={adjustModal.loading}
+              style={{
+                marginTop: 18,
+                backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {adjustModal.loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
+              )}
             </TouchableOpacity>
-          </View>
-          <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
-            Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
-          </Text>
-          <View style={{ marginTop: 16 }}>
-            <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
-            <TextInput
-              value={adjustModal.amount}
-              onChangeText={handleAdjustAmountChange}
-              placeholder="contoh: 250000"
-              keyboardType="numeric"
+            <TouchableOpacity
+              onPress={closeAdjustModal}
+              disabled={adjustModal.loading}
               style={{
-                borderWidth: 1,
-                borderColor: "#E2E8F0",
+                marginTop: 12,
+                paddingVertical: 12,
                 borderRadius: 12,
-                paddingHorizontal: 12,
-                height: 44,
-              }}
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-          <View style={{ marginTop: 12 }}>
-            <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
-            <TextInput
-              value={adjustModal.note}
-              onChangeText={handleAdjustNoteChange}
-              placeholder="contoh: Penyesuaian kas"
-              style={{
+                alignItems: "center",
                 borderWidth: 1,
-                borderColor: "#E2E8F0",
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                height: 96,
-                textAlignVertical: "top",
+                borderColor: "#CBD5F5",
               }}
-              placeholderTextColor="#94A3B8"
-              multiline
-            />
-          </View>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
-            <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
-            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={handleAdjustSubmit}
-            disabled={adjustModal.loading}
-            style={{
-              marginTop: 18,
-              backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
-          >
-            {adjustModal.loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={closeAdjustModal}
-            disabled={adjustModal.loading}
-            style={{
-              marginTop: 12,
-              paddingVertical: 12,
-              borderRadius: 12,
-              alignItems: "center",
-              borderWidth: 1,
-              borderColor: "#CBD5F5",
-            }}
-          >
-            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
-          </TouchableOpacity>
-        </View>
+            >
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -1322,7 +1328,9 @@ export function BookkeepingDetailScreen({ route, navigation }) {
           onPress={closeAdjustModal}
           style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.45)" }}
         />
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 24 : 0}
           style={{
             position: "absolute",
             left: 0,
@@ -1331,98 +1339,102 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             backgroundColor: "#fff",
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
-            padding: 20,
-            paddingBottom: 28,
+            paddingHorizontal: 20,
+            paddingTop: 20,
+            paddingBottom: Platform.OS === "ios" ? 32 : 24,
             shadowColor: "#0F172A",
             shadowOpacity: 0.12,
             shadowRadius: 18,
             elevation: 6,
+            maxHeight: "80%",
           }}
         >
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
-              <Text style={{ color: "#64748B", marginTop: 4 }}>{entry.name}</Text>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
+                <Text style={{ color: "#64748B", marginTop: 4 }}>{entry.name}</Text>
+              </View>
+              <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={closeAdjustModal} disabled={adjustModal.loading}>
-              <Ionicons name="close" size={22} color="#94A3B8" />
+            <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
+              Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
+            </Text>
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
+              <TextInput
+                value={adjustModal.amount}
+                onChangeText={handleAdjustAmountChange}
+                placeholder="contoh: 250000"
+                keyboardType="numeric"
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  height: 44,
+                }}
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
+              <TextInput
+                value={adjustModal.note}
+                onChangeText={handleAdjustNoteChange}
+                placeholder="contoh: Penyesuaian"
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  minHeight: 96,
+                  textAlignVertical: "top",
+                }}
+                placeholderTextColor="#94A3B8"
+                multiline
+              />
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
+              <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
+              <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleAdjustSubmit}
+              disabled={adjustModal.loading}
+              style={{
+                marginTop: 18,
+                backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {adjustModal.loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
+              )}
             </TouchableOpacity>
-          </View>
-          <Text style={{ color: "#0F172A", fontWeight: "600", marginTop: 12 }}>
-            Saldo saat ini: {formatCurrencyValue(adjustCurrentAmount)}
-          </Text>
-          <View style={{ marginTop: 16 }}>
-            <Text style={{ color: "#64748B", marginBottom: 6 }}>Nominal</Text>
-            <TextInput
-              value={adjustModal.amount}
-              onChangeText={handleAdjustAmountChange}
-              placeholder="contoh: 250000"
-              keyboardType="numeric"
+            <TouchableOpacity
+              onPress={closeAdjustModal}
+              disabled={adjustModal.loading}
               style={{
-                borderWidth: 1,
-                borderColor: "#E2E8F0",
+                marginTop: 12,
+                paddingVertical: 12,
                 borderRadius: 12,
-                paddingHorizontal: 12,
-                height: 44,
-              }}
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-          <View style={{ marginTop: 12 }}>
-            <Text style={{ color: "#64748B", marginBottom: 6 }}>Catatan (opsional)</Text>
-            <TextInput
-              value={adjustModal.note}
-              onChangeText={handleAdjustNoteChange}
-              placeholder="contoh: Penyesuaian"
-              style={{
+                alignItems: "center",
                 borderWidth: 1,
-                borderColor: "#E2E8F0",
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                height: 96,
-                textAlignVertical: "top",
+                borderColor: "#CBD5F5",
               }}
-              placeholderTextColor="#94A3B8"
-              multiline
-            />
-          </View>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 16 }}>
-            <Text style={{ color: "#64748B" }}>Saldo setelah update</Text>
-            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrencyValue(adjustNextAmount)}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={handleAdjustSubmit}
-            disabled={adjustModal.loading}
-            style={{
-              marginTop: 18,
-              backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
-          >
-            {adjustModal.loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan Perubahan</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={closeAdjustModal}
-            disabled={adjustModal.loading}
-            style={{
-              marginTop: 12,
-              paddingVertical: 12,
-              borderRadius: 12,
-              alignItems: "center",
-              borderWidth: 1,
-              borderColor: "#CBD5F5",
-            }}
-          >
-            <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
-          </TouchableOpacity>
-        </View>
+            >
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

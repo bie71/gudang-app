@@ -342,7 +342,7 @@ export function ItemsScreen({ navigation }) {
               .summary-item { background: #f8fafc; border-radius: 16px; padding: 18px 20px; flex: 1 1 210px; }
               .summary-item h2 { margin: 0 0 8px; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
               .summary-item p { margin: 0; font-size: 18px; font-weight: 600; color: #0f172a; }
-              table { width: 100%; border-collapse: collapse; margin-top: 12px; background: #d3d3d3ff; border-radius: 8px;}
+              table { width: 100%; border-collapse: collapse; margin-top: 12px; background: #e8edf3ff;}
               thead { background: #f8fafc; }
               th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
               th { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }

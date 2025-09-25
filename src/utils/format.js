@@ -86,3 +86,10 @@ export function buildItemsReportFileBase(range = {}) {
   const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
   return `laporan-barang_${startSlug}_sd_${endSlug}`;
 }
+
+export function buildPurchaseOrdersReportFileBase(range = {}) {
+  const todaySlug = safeSlug(formatDateInputValue(new Date()));
+  const startSlug = range.startDate ? safeSlug(range.startDate) : todaySlug;
+  const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
+  return `laporan-po_${startSlug}_sd_${endSlug}`;
+}
