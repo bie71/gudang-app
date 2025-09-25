@@ -79,3 +79,10 @@ export function buildBookkeepingReportFileBase(range = {}) {
   const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
   return `laporan-pembukuan_${startSlug}_sd_${endSlug}`;
 }
+
+export function buildItemsReportFileBase(range = {}) {
+  const todaySlug = safeSlug(formatDateInputValue(new Date()));
+  const startSlug = range.startDate ? safeSlug(range.startDate) : todaySlug;
+  const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
+  return `laporan-barang_${startSlug}_sd_${endSlug}`;
+}
