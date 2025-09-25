@@ -469,6 +469,7 @@ export default function DashboardScreen({ navigation }) {
     ],
     [],
   );
+  const easeIn = useMemo(() => Easing.in(Easing.ease), []);
   const handleTabPress = useCallback(
     key => {
       if (key === activeTab) {
@@ -480,27 +481,26 @@ export default function DashboardScreen({ navigation }) {
       }
       tabTransitioningRef.current = true;
       Animated.timing(tabTransition, {
-        toValue: 0,
-        duration: 160,
-        easing: Easing.out(Easing.quad),
+        toValue: 0.8,
+        duration: 100,
+        easing: easeIn,
         useNativeDriver: true,
       }).start(() => {
-        tabTransition.setValue(0);
+        tabTransition.setValue(0.9);
         setActiveTab(key);
         setTooltipTab(null);
         Animated.timing(tabTransition, {
           toValue: 1,
-          duration: 220,
-          easing: Easing.out(Easing.quad),
+          duration: 120,
+          easing: easeIn,
           useNativeDriver: true,
         }).start(() => {
           tabTransitioningRef.current = false;
         });
       });
     },
-    [activeTab, tabTransition],
+    [activeTab, easeIn, tabTransition],
   );
-  const tabContentTranslateY = tabTransition.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   const chartDimensions = useMemo(() => {
     const windowWidth = Dimensions.get("window").width || 360;
     const width = Math.max(windowWidth - 64, 240);
@@ -2257,7 +2257,7 @@ export default function DashboardScreen({ navigation }) {
             })}
           </View>
 
-          <Animated.View style={{ opacity: tabTransition, transform: [{ translateY: tabContentTranslateY }] }}>
+          <Animated.View style={{ opacity: tabTransition }}>
             <View style={{ gap: 16 }}>
               {activeTabSections.map((section, index) => (
                 <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>

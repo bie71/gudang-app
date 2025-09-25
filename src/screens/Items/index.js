@@ -8,22 +8,52 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 import ActionButton from "../../components/ActionButton";
 import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
+import DatePickerField from "../../components/DatePickerField";
 import { exec } from "../../services/database";
+import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import {
   formatCurrencyValue,
+  formatDateDisplay,
+  formatDateInputValue,
   formatDateTimeDisplay,
   formatNumberInput,
   formatNumberValue,
   parseNumberInput,
+  buildItemsReportFileBase,
 } from "../../utils/format";
+
+function buildDefaultReportRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return {
+    startDate: formatDateInputValue(start),
+    endDate: formatDateInputValue(now),
+  };
+}
+
+function escapeHtml(value) {
+  if (value == null) return "";
+  const map = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  return String(value).replace(/[&<>"']/g, char => map[char] || char);
+}
 
 export function ItemsScreen({ navigation }) {
   const PAGE_SIZE = 20;
@@ -33,6 +63,11 @@ export function ItemsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [reportModalState, setReportModalState] = useState(() => ({
+    visible: false,
+    ...buildDefaultReportRange(),
+  }));
+  const [reportGenerating, setReportGenerating] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -140,6 +175,269 @@ export function ItemsScreen({ navigation }) {
     }
   };
 
+  const openReportModal = () => {
+    const defaults = buildDefaultReportRange();
+    setReportModalState({ visible: true, ...defaults });
+  };
+
+  const closeReportModal = useCallback(() => {
+    if (reportGenerating) return;
+    setReportModalState(prev => ({ ...prev, visible: false }));
+  }, [reportGenerating]);
+
+  const handleGenerateReport = useCallback(async () => {
+    const { startDate, endDate } = reportModalState;
+    if (!startDate || !endDate) {
+      Alert.alert("Validasi", "Tanggal mulai dan akhir wajib dipilih.");
+      return;
+    }
+    if (startDate > endDate) {
+      Alert.alert("Validasi", "Tanggal mulai tidak boleh melebihi tanggal akhir.");
+      return;
+    }
+    if (reportGenerating) return;
+    setReportGenerating(true);
+    try {
+      const res = await exec(
+        `
+          SELECT
+            sh.id,
+            sh.created_at,
+            sh.type,
+            sh.qty,
+            sh.note,
+            sh.unit_price,
+            sh.unit_cost,
+            sh.profit_amount,
+            i.name as item_name,
+            i.category as item_category,
+            i.price as default_price,
+            i.cost_price as default_cost
+          FROM stock_history sh
+          JOIN items i ON i.id = sh.item_id
+          WHERE DATE(sh.created_at) BETWEEN ? AND ?
+          ORDER BY sh.created_at ASC, sh.id ASC
+        `,
+        [startDate, endDate],
+      );
+      const rows = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        rows.push(row);
+      }
+      if (!rows.length) {
+        Alert.alert("Tidak Ada Data", "Tidak ada riwayat stok dalam rentang tanggal tersebut.");
+        return;
+      }
+
+      let totalInQty = 0;
+      let totalOutQty = 0;
+      let totalOutValue = 0;
+      let totalOutCost = 0;
+      let totalInCost = 0;
+      let totalProfit = 0;
+
+      const detailRows = rows.map(row => {
+        const qty = Number(row.qty ?? 0);
+        const type = row.type === "OUT" ? "OUT" : "IN";
+        const unitPrice = Number(row.unit_price ?? row.default_price ?? 0);
+        const unitCost = Number(row.unit_cost ?? row.default_cost ?? 0);
+        const totalPrice = type === "OUT" ? unitPrice * qty : 0;
+        const totalCost = unitCost * qty;
+        const profitAmount =
+          type === "OUT" ? Number(row.profit_amount ?? (unitPrice - unitCost) * qty) : 0;
+
+        if (type === "IN") {
+          totalInQty += qty;
+          totalInCost += totalCost;
+        } else {
+          totalOutQty += qty;
+          totalOutValue += totalPrice;
+          totalOutCost += totalCost;
+          totalProfit += profitAmount;
+        }
+
+        return {
+          id: row.id,
+          createdAt: row.created_at,
+          type,
+          qty,
+          itemName: row.item_name,
+          category: row.item_category,
+          note: row.note,
+          totalPrice,
+          totalCost,
+          profitAmount,
+        };
+      });
+
+      const startDisplay = formatDateDisplay(startDate);
+      const endDisplay = formatDateDisplay(endDate);
+      const summaryCards = [
+        { title: "Profit Bersih", value: formatCurrencyValue(totalProfit) },
+        { title: "Nilai Penjualan", value: formatCurrencyValue(totalOutValue) },
+        { title: "Modal Penjualan", value: formatCurrencyValue(totalOutCost) },
+        { title: "Modal Pengadaan", value: formatCurrencyValue(totalInCost) },
+        { title: "Barang Keluar", value: `${formatNumberValue(totalOutQty)} pcs` },
+        { title: "Barang Masuk", value: `${formatNumberValue(totalInQty)} pcs` },
+        { title: "Total Catatan", value: formatNumberValue(detailRows.length) },
+      ];
+
+      const rowsHtml = detailRows
+        .map((entry, index) => {
+          const inQty = entry.type === "IN" ? formatNumberValue(entry.qty) : "-";
+          const outQty = entry.type === "OUT" ? formatNumberValue(entry.qty) : "-";
+          const saleValue = entry.type === "OUT" ? formatCurrencyValue(entry.totalPrice) : "-";
+          const costValue = formatCurrencyValue(entry.totalCost);
+          const profitValue = entry.type === "OUT" ? formatCurrencyValue(entry.profitAmount) : "-";
+          const categoryBadge = entry.category
+            ? `<div class="item-category">${escapeHtml(entry.category)}</div>`
+            : "";
+          const noteText = entry.note ? escapeHtml(entry.note) : "-";
+          return `
+            <tr>
+              <td class="col-index">${index + 1}</td>
+              <td class="col-date">${escapeHtml(formatDateTimeDisplay(entry.createdAt))}</td>
+              <td class="col-item">
+                <div class="item-name">${escapeHtml(entry.itemName || "-")}</div>
+                ${categoryBadge}
+              </td>
+              <td class="col-type">${entry.type === "IN" ? "Masuk" : "Keluar"}</td>
+              <td class="col-qty">${inQty}</td>
+              <td class="col-qty">${outQty}</td>
+              <td class="col-amount">${saleValue}</td>
+              <td class="col-amount">${costValue}</td>
+              <td class="col-amount">${profitValue}</td>
+              <td class="col-note">${noteText}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      const summaryHtml = summaryCards
+        .map(card => {
+          return `
+            <div class="summary-item">
+              <h2>${escapeHtml(card.title)}</h2>
+              <p>${escapeHtml(card.value)}</p>
+            </div>
+          `;
+        })
+        .join("");
+
+      const fileBase = buildItemsReportFileBase({ startDate, endDate });
+      const html = `
+        <!DOCTYPE html>
+        <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <title>Laporan Barang</title>
+            <style>
+              @page { size: A4; margin: 24px 32px; }
+              * { box-sizing: border-box; font-family: 'Inter', 'Helvetica', 'Arial', sans-serif; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
+              .header h1 { margin: 0; font-size: 28px; }
+              .range { color: #64748b; margin-top: 4px; font-size: 14px; }
+              .summary { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+              .summary-item { background: #f8fafc; border-radius: 16px; padding: 18px 20px; flex: 1 1 210px; }
+              .summary-item h2 { margin: 0 0 8px; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+              .summary-item p { margin: 0; font-size: 18px; font-weight: 600; color: #0f172a; }
+              table { width: 100%; border-collapse: collapse; margin-top: 12px; background: #d3d3d3ff; border-radius: 8px;}
+              thead { background: #f8fafc; }
+              th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+              th { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+              td { font-size: 13px; color: #0f172a; }
+              .col-index { width: 48px; text-align: center; }
+              .col-date { width: 150px; }
+              .col-item { width: 220px; }
+              .col-type { width: 72px; text-transform: uppercase; font-weight: 600; text-align: center; }
+              .col-qty { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+              .col-amount { width: 120px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+              .col-note { width: 220px; }
+              .item-name { font-weight: 600; }
+              .item-category { margin-top: 4px; color: #64748b; font-size: 12px; }
+              tfoot td { font-weight: 700; color: #0f172a; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="header">
+                <div>
+                  <p style="letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; margin: 0 0 8px;">Laporan</p>
+                  <h1>Barang & Persediaan</h1>
+                  <p class="range">${escapeHtml(startDisplay)} - ${escapeHtml(endDisplay)}</p>
+                </div>
+              </div>
+              <div class="summary">
+                ${summaryHtml}
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th class="col-index">No</th>
+                    <th class="col-date">Tanggal</th>
+                    <th class="col-item">Barang</th>
+                    <th class="col-type">Tipe</th>
+                    <th class="col-qty">Masuk</th>
+                    <th class="col-qty">Keluar</th>
+                    <th class="col-amount">Nilai Jual</th>
+                    <th class="col-amount">Modal</th>
+                    <th class="col-amount">Profit</th>
+                    <th class="col-note">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="4" style="text-align: right;">Total</td>
+                    <td class="col-qty">${escapeHtml(formatNumberValue(totalInQty))}</td>
+                    <td class="col-qty">${escapeHtml(formatNumberValue(totalOutQty))}</td>
+                    <td class="col-amount">${escapeHtml(formatCurrencyValue(totalOutValue))}</td>
+                    <td class="col-amount">${escapeHtml(formatCurrencyValue(totalOutCost + totalInCost))}</td>
+                    <td class="col-amount">${escapeHtml(formatCurrencyValue(totalProfit))}</td>
+                    <td class="col-note"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false, fileName: fileBase });
+      const { uri: savedUri, location: savedLocation, notice: savedNotice, displayPath: savedDisplayPath } = await saveFileToStorage(
+        uri,
+        `${fileBase}.pdf`,
+        "application/pdf",
+      );
+      if (await Sharing.isAvailableAsync()) {
+        const shareUri = await resolveShareableUri(`${fileBase}-share.pdf`, uri, savedUri);
+        if (shareUri) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Bagikan Laporan Barang",
+            UTI: "com.adobe.pdf",
+          });
+        }
+      }
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Laporan Dibuat", alertMessage);
+      setReportModalState(prev => ({ ...prev, visible: false }));
+    } catch (error) {
+      console.log("ITEMS REPORT ERROR:", error);
+      Alert.alert("Gagal", "Laporan tidak dapat dibuat saat ini.");
+    } finally {
+      setReportGenerating(false);
+    }
+  }, [reportModalState, reportGenerating]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <View style={{ padding: 16, flex: 1 }}>
@@ -173,6 +471,21 @@ export function ItemsScreen({ navigation }) {
             }}
           >
             <Text style={{ color: "#fff", fontWeight: "700" }}>+ Barang</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={openReportModal}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#2563EB",
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              gap: 6,
+            }}
+          >
+            <Ionicons name="document-text-outline" size={18} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
           </TouchableOpacity>
         </View>
         <FlatList
@@ -306,6 +619,71 @@ export function ItemsScreen({ navigation }) {
           contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
+
+      <Modal
+        visible={reportModalState.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeReportModal}
+        statusBarTranslucent
+      >
+        <Pressable
+          onPress={closeReportModal}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.55)" }}
+        />
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            paddingBottom: 24,
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.12,
+            shadowRadius: 16,
+            elevation: 6,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Laporan Barang</Text>
+            <TouchableOpacity onPress={closeReportModal} disabled={reportGenerating}>
+              <Ionicons name="close" size={22} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: "#64748B", marginTop: 6 }}>
+            Pilih rentang tanggal untuk membuat laporan barang dan riwayat stok dalam format PDF.
+          </Text>
+          <View style={{ marginTop: 18 }}>
+            <DatePickerField
+              label="Tanggal Mulai"
+              value={reportModalState.startDate}
+              onChange={value => setReportModalState(prev => ({ ...prev, startDate: value }))}
+            />
+            <DatePickerField
+              label="Tanggal Akhir"
+              value={reportModalState.endDate}
+              onChange={value => setReportModalState(prev => ({ ...prev, endDate: value }))}
+            />
+          </View>
+          <TouchableOpacity
+            onPress={handleGenerateReport}
+            disabled={reportGenerating}
+            style={{
+              marginTop: 12,
+              backgroundColor: reportGenerating ? "#93C5FD" : "#2563EB",
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: "center",
+            }}
+          >
+            {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Generate PDF</Text>}
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
