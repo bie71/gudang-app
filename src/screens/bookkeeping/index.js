@@ -12,8 +12,10 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -23,10 +25,12 @@ import DatePickerField from "../../components/DatePickerField";
 import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
+import ViewShot from "react-native-view-shot";
 import { exec } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import {
   buildBookkeepingReportFileBase,
+  buildBookkeepingEntryImageFileBase,
   formatCurrencyValue,
   formatDateDisplay,
   formatDateTimeDisplay,
@@ -59,6 +63,7 @@ function escapeHtml(value) {
 
 export function BookkeepingScreen({ navigation }) {
   const PAGE_SIZE = 20;
+  const insets = useSafeAreaInsets();
   const [entries, setEntries] = useState([]);
   const [summary, setSummary] = useState({ totalEntries: 0, totalAmount: 0 });
   const [searchTerm, setSearchTerm] = useState("");
@@ -79,6 +84,7 @@ export function BookkeepingScreen({ navigation }) {
     note: "",
     loading: false,
   });
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -330,6 +336,7 @@ export function BookkeepingScreen({ navigation }) {
               * { box-sizing: border-box; font-family: 'Inter', 'Helvetica', 'Arial', sans-serif; }
               .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
               .header h1 { margin: 0; font-size: 28px; }
+              .card {padding: 8px}
               .range { color: #64748b; margin-top: 4px; font-size: 14px; }
               .summary { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
               .summary-item { background: #f8fafc; border-radius: 16px; padding: 16px 20px; flex: 1 1 220px; }
@@ -341,10 +348,10 @@ export function BookkeepingScreen({ navigation }) {
               th { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
               td { font-size: 14px; color: #0f172a; }
               .col-index { width: 48px; text-align: center; }
-              .col-date { width: 140px; }
+              .col-date { width: 180px; }
               .col-name { width: 220px; }
-              .col-note { width: 100%; }
-              .col-amount { width: 140px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+              .col-note { width: 450px; }
+              .col-amount { width: 400px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
               tfoot td { font-weight: 700; color: #0f172a; }
             </style>
           </head>
@@ -500,6 +507,33 @@ export function BookkeepingScreen({ navigation }) {
     adjustModal.mode === "SUBTRACT"
       ? adjustCurrentAmount - adjustAmountValue
       : adjustCurrentAmount + adjustAmountValue;
+  const modalBottomInset = Math.max(insets.bottom, 5);
+  useEffect(() => {
+    if (!adjustModal.visible) {
+      setKeyboardInset(0);
+      return undefined;
+    }
+    const showEvent = Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
+    const hideEvent = Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
+    const showSub = Keyboard.addListener(showEvent, event => {
+      const height = event?.endCoordinates?.height ?? 0;
+      const adjusted = Math.max(0, height - insets.bottom);
+      setKeyboardInset(adjusted);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+      setKeyboardInset(0);
+    };
+  }, [adjustModal.visible, insets.bottom]);
+  const keyboardPadding = keyboardInset > 0 ? keyboardInset-100: 0;
+  const containerPaddingBottom = modalBottomInset + keyboardPadding;
+  const keyboardVerticalOffset = Platform.select({
+    ios: insets.top + 24,
+    android: modalBottomInset,
+    default: modalBottomInset,
+  });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
@@ -641,7 +675,7 @@ export function BookkeepingScreen({ navigation }) {
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 24 : 0}
+          keyboardVerticalOffset={keyboardVerticalOffset}
           style={{
             position: "absolute",
             left: 0,
@@ -652,7 +686,7 @@ export function BookkeepingScreen({ navigation }) {
             borderTopRightRadius: 24,
             paddingHorizontal: 20,
             paddingTop: 20,
-            paddingBottom: Platform.OS === "ios" ? 32 : 24,
+            paddingBottom: containerPaddingBottom,
             shadowColor: "#0F172A",
             shadowOpacity: 0.1,
             shadowRadius: 18,
@@ -660,7 +694,11 @@ export function BookkeepingScreen({ navigation }) {
             maxHeight: "80%",
           }}
         >
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: containerPaddingBottom }}
+            scrollIndicatorInsets={{ bottom: containerPaddingBottom }}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>
@@ -975,6 +1013,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
   const entryIdParam = route.params?.entryId;
   const onDone = route.params?.onDone;
   const initialEntry = route.params?.initialEntry;
+  const insets = useSafeAreaInsets();
   const normalizeEntry = useCallback(data => {
     if (!data) return null;
     return {
@@ -997,6 +1036,9 @@ export function BookkeepingDetailScreen({ route, navigation }) {
     note: "",
     loading: false,
   });
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const reportShotRef = useRef(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const entryId = Number(entryIdParam);
   const HISTORY_LIMIT = 50;
 
@@ -1068,6 +1110,44 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       onDone();
     }
   }, [onDone]);
+
+  const handleGenerateReportImage = useCallback(async () => {
+    if (!entry) return;
+    const viewShot = reportShotRef.current;
+    if (!viewShot || typeof viewShot.capture !== "function") {
+      Alert.alert("Gagal", "Pratinjau laporan belum siap.");
+      return;
+    }
+    try {
+      setReportGenerating(true);
+      const tempUri = await viewShot.capture({ format: "png", quality: 1 });
+      const fileBase = buildBookkeepingEntryImageFileBase(entry);
+      const fileName = `${fileBase}.png`;
+      const { uri: savedUri, location: savedLocation, notice: savedNotice, displayPath: savedDisplayPath } =
+        await saveFileToStorage(tempUri, fileName, "image/png");
+      if (await Sharing.isAvailableAsync()) {
+        const shareUri = await resolveShareableUri(`${fileBase}-share.png`, tempUri, savedUri);
+        if (shareUri) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType: "image/png",
+            dialogTitle: "Bagikan Laporan Pembukuan (PNG)",
+          });
+        }
+      }
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Gambar Disimpan", alertMessage);
+    } catch (error) {
+      console.log("BOOKKEEPING REPORT IMAGE ERROR:", error);
+      Alert.alert("Gagal", "Gambar laporan tidak dapat dibuat.");
+    } finally {
+      setReportGenerating(false);
+    }
+  }, [entry]);
 
   const openAdjustModal = useCallback(
     mode => {
@@ -1220,6 +1300,57 @@ export function BookkeepingDetailScreen({ route, navigation }) {
     adjustModal.mode === "SUBTRACT"
       ? adjustCurrentAmount - adjustAmountValue
       : adjustCurrentAmount + adjustAmountValue;
+  const windowWidth = Dimensions.get("window").width;
+  const reportWidth = Math.max(windowWidth - 48, 640);
+  const historyPreview = history.slice(0, 6);
+  const totalAdjustments = history.filter(item => item.type !== "CREATE").length;
+  const lastUpdatedDisplay = history.length
+    ? formatDateTimeDisplay(history[0].createdAt)
+    : entry.createdAt
+    ? formatDateTimeDisplay(entry.createdAt)
+    : "-";
+  const oldestHistory = history.length ? history[history.length - 1] : null;
+  const initialAmount = oldestHistory
+    ? Number(
+        Number.isFinite(oldestHistory.previousAmount)
+          ? oldestHistory.previousAmount
+          : oldestHistory.newAmount ?? adjustCurrentAmount,
+      )
+    : adjustCurrentAmount;
+  const netChange = adjustCurrentAmount - initialAmount;
+  const netChangeLabel = `${netChange >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(netChange))}`;
+  const historyPreviewNotice = history.length > historyPreview.length
+    ? `Menampilkan ${historyPreview.length} dari ${history.length} riwayat terbaru`
+    : history.length
+    ? `Menampilkan ${historyPreview.length} riwayat`
+    : "Tidak ada riwayat";
+  const modalBottomInset = Math.max(insets.bottom, 16);
+  useEffect(() => {
+    if (!adjustModal.visible) {
+      setKeyboardInset(0);
+      return undefined;
+    }
+    const showEvent = Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
+    const hideEvent = Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
+    const showSub = Keyboard.addListener(showEvent, event => {
+      const height = event?.endCoordinates?.height ?? 0;
+      const adjusted = Math.max(0, height - insets.bottom);
+      setKeyboardInset(adjusted);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+      setKeyboardInset(0);
+    };
+  }, [adjustModal.visible, insets.bottom]);
+  const keyboardPadding = keyboardInset > 0 ? keyboardInset + 16 : 0;
+  const containerPaddingBottom = modalBottomInset + keyboardPadding;
+  const keyboardVerticalOffset = Platform.select({
+    ios: insets.top + 24,
+    android: modalBottomInset,
+    default: modalBottomInset,
+  });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
@@ -1251,6 +1382,12 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             marginBottom: 20,
           }}
         >
+          <ActionButton
+            label="Laporan PNG"
+            onPress={handleGenerateReportImage}
+            color="#0EA5E9"
+            loading={reportGenerating}
+          />
           <ActionButton label="Tambah Nominal" onPress={() => openAdjustModal("ADD")} color="#16A34A" />
           <ActionButton label="Kurangi Nominal" onPress={() => openAdjustModal("SUBTRACT")} color="#F97316" />
           <ActionButton label="Edit" onPress={handleEdit} color="#2563EB" />
@@ -1317,6 +1454,133 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
+      <View style={{ position: "absolute", top: -9999, left: -9999 }}>
+        <ViewShot
+          ref={reportShotRef}
+          collapsable={false}
+          style={{ width: reportWidth }}
+        >
+          <View style={{ backgroundColor: "#F8FAFC", padding: 24, gap: 16 }}>
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 12,
+              }}
+            >
+              <Text style={{ color: "#0EA5E9", fontWeight: "700", letterSpacing: 0.08, textTransform: "uppercase", fontSize: 12 }}>
+                Laporan Pembukuan
+              </Text>
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 26 }}>{entry.name}</Text>
+              <Text style={{ color: "#64748B" }}>Tanggal catatan: {formattedDate}</Text>
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: "#64748B", fontSize: 12, letterSpacing: 0.08, textTransform: "uppercase" }}>
+                  Saldo saat ini
+                </Text>
+                <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 24, marginTop: 4 }}>{formattedAmount}</Text>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
+                {[
+                  { label: "Saldo awal", value: formatCurrencyValue(initialAmount) },
+                  { label: "Perubahan bersih", value: netChangeLabel },
+                  { label: "Total penyesuaian", value: `${formatNumberValue(totalAdjustments)}x` },
+                  { label: "Update terakhir", value: lastUpdatedDisplay },
+                ].map(stat => (
+                  <View
+                    key={stat.label}
+                    style={{
+                      backgroundColor: "#F1F5F9",
+                      borderRadius: 16,
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      minWidth: 180,
+                    }}
+                  >
+                    <Text style={{ color: "#64748B", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.08 }}>
+                      {stat.label}
+                    </Text>
+                    <Text style={{ color: "#0F172A", fontWeight: "700", marginTop: 4 }}>{stat.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 10,
+              }}
+            >
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 18 }}>Catatan</Text>
+              <Text style={{ color: "#475569", fontSize: 14 }}>{noteDisplay}</Text>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 12,
+              }}
+            >
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 18 }}>Riwayat Terbaru</Text>
+              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{historyPreviewNotice}</Text>
+              {historyPreview.length ? (
+                <View style={{ gap: 12 }}>
+                  {historyPreview.map(item => {
+                    const changeColor = item.changeAmount >= 0 ? "#16A34A" : "#DC2626";
+                    const changeLabel = `${item.changeAmount >= 0 ? "+" : "-"} ${formatCurrencyValue(
+                      Math.abs(item.changeAmount),
+                    )}`;
+                    const typeLabel =
+                      item.type === "ADD"
+                        ? "Penambahan"
+                        : item.type === "SUBTRACT"
+                        ? "Pengurangan"
+                        : item.type === "CREATE"
+                        ? "Catatan Baru"
+                        : item.type === "EDIT"
+                        ? "Perubahan"
+                        : item.type;
+                    return (
+                      <View key={item.id} style={{ borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 16, padding: 16, gap: 8 }}>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View>
+                            <Text style={{ color: changeColor, fontWeight: "700" }}>{changeLabel}</Text>
+                            <Text style={{ color: "#64748B", fontSize: 12 }}>{typeLabel}</Text>
+                          </View>
+                          <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                            {formatDateTimeDisplay(item.createdAt)}
+                          </Text>
+                        </View>
+                        <Text style={{ color: "#0F172A", fontWeight: "600" }}>
+                          Saldo: {formatCurrencyValue(item.newAmount)}
+                        </Text>
+                        {item.note ? <Text style={{ color: "#475569" }}>Catatan: {item.note}</Text> : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <Ionicons name="time-outline" size={28} color="#CBD5F5" />
+                  <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada riwayat perubahan.</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </ViewShot>
+      </View>
+
       <Modal
         visible={adjustModal.visible}
         transparent
@@ -1330,7 +1594,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 24 : 0}
+          keyboardVerticalOffset={keyboardVerticalOffset}
           style={{
             position: "absolute",
             left: 0,
@@ -1341,7 +1605,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             borderTopRightRadius: 24,
             paddingHorizontal: 20,
             paddingTop: 20,
-            paddingBottom: Platform.OS === "ios" ? 32 : 24,
+            paddingBottom: containerPaddingBottom,
             shadowColor: "#0F172A",
             shadowOpacity: 0.12,
             shadowRadius: 18,
@@ -1349,7 +1613,11 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             maxHeight: "80%",
           }}
         >
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: containerPaddingBottom }}
+            scrollIndicatorInsets={{ bottom: containerPaddingBottom }}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>{adjustModeLabel}</Text>

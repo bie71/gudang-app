@@ -10,6 +10,7 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -32,7 +33,9 @@ import {
   formatNumberValue,
   parseNumberInput,
   buildItemsReportFileBase,
+  buildItemImageFileBase,
 } from "../../utils/format";
+import ViewShot from "react-native-view-shot";
 
 function buildDefaultReportRange() {
   const now = new Date();
@@ -709,6 +712,8 @@ export function ItemDetailScreen({ route, navigation }) {
   const [history, setHistory] = useState([]);
   const [profitSummary, setProfitSummary] = useState({ totalProfit: 0, totalQty: 0, lastSaleAt: null });
   const [loading, setLoading] = useState(() => !initialItemParam);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const reportShotRef = useRef(null);
   const selectedItemId = Number(selectedItemIdParam);
   const HISTORY_LIMIT = 20;
 
@@ -800,6 +805,44 @@ export function ItemDetailScreen({ route, navigation }) {
       onDone();
     }
   }, [onDone]);
+
+  const handleGenerateReportImage = useCallback(async () => {
+    if (!item) return;
+    const viewShot = reportShotRef.current;
+    if (!viewShot || typeof viewShot.capture !== "function") {
+      Alert.alert("Gagal", "Pratinjau laporan belum siap.");
+      return;
+    }
+    try {
+      setReportGenerating(true);
+      const tempUri = await viewShot.capture({ format: "png", quality: 1 });
+      const fileBase = buildItemImageFileBase(item);
+      const fileName = `${fileBase}.png`;
+      const { uri: savedUri, location: savedLocation, notice: savedNotice, displayPath: savedDisplayPath } =
+        await saveFileToStorage(tempUri, fileName, "image/png");
+      if (await Sharing.isAvailableAsync()) {
+        const shareUri = await resolveShareableUri(`${fileBase}-share.png`, tempUri, savedUri);
+        if (shareUri) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType: "image/png",
+            dialogTitle: "Bagikan Laporan Barang (PNG)",
+          });
+        }
+      }
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Gambar Disimpan", alertMessage);
+    } catch (error) {
+      console.log("ITEM REPORT IMAGE ERROR:", error);
+      Alert.alert("Gagal", "Gambar laporan tidak dapat dibuat.");
+    } finally {
+      setReportGenerating(false);
+    }
+  }, [item]);
 
   const handleEdit = useCallback(() => {
     if (!item) return;
@@ -893,6 +936,14 @@ export function ItemDetailScreen({ route, navigation }) {
   const totalQtyDisplay = `${formatNumberValue(profitSummary.totalQty ?? 0)} pcs`;
   const lastSaleDisplay = profitSummary.lastSaleAt ? formatDateTimeDisplay(profitSummary.lastSaleAt) : "-";
   const isRefreshing = loading;
+  const windowWidth = Dimensions.get("window").width;
+  const reportWidth = Math.max(windowWidth - 48, 640);
+  const historyPreview = history.slice(0, 6);
+  const historyPreviewNotice = history.length > historyPreview.length
+    ? `Menampilkan ${historyPreview.length} dari ${history.length} riwayat terbaru`
+    : history.length
+    ? `Menampilkan ${historyPreview.length} riwayat`
+    : "Tidak ada riwayat";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
@@ -939,6 +990,12 @@ export function ItemDetailScreen({ route, navigation }) {
           </View>
         </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, rowGap: 12, marginBottom: 20 }}>
+          <ActionButton
+            label="Laporan PNG"
+            onPress={handleGenerateReportImage}
+            color="#0EA5E9"
+            loading={reportGenerating}
+          />
           <ActionButton label="Barang Masuk" onPress={() => handleStockMove("IN")} color="#2563EB" />
           <ActionButton label="Barang Keluar" onPress={() => handleStockMove("OUT")} color="#EF4444" />
           <ActionButton label="Edit Barang" onPress={handleEdit} color="#4F46E5" />
@@ -1010,6 +1067,140 @@ export function ItemDetailScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <View style={{ position: "absolute", top: -9999, left: -9999 }}>
+        <ViewShot ref={reportShotRef} collapsable={false} style={{ width: reportWidth }}>
+          <View style={{ backgroundColor: "#F8FAFC", padding: 24, gap: 16 }}>
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 12,
+              }}
+            >
+              <Text style={{ color: "#0EA5E9", fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.08, fontSize: 12 }}>
+                Laporan Barang
+              </Text>
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 26 }}>{item.name}</Text>
+              <Text style={{ color: "#64748B" }}>{categoryDisplay}</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
+                {[
+                  { label: "Stok", value: stockDisplay },
+                  { label: "Nilai persediaan", value: totalDisplay },
+                  { label: "Harga jual", value: priceDisplay },
+                  { label: "Harga modal", value: costDisplay },
+                ].map(stat => (
+                  <View
+                    key={stat.label}
+                    style={{
+                      backgroundColor: "#F1F5F9",
+                      borderRadius: 16,
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      minWidth: 180,
+                    }}
+                  >
+                    <Text style={{ color: "#64748B", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.08 }}>
+                      {stat.label}
+                    </Text>
+                    <Text style={{ color: "#0F172A", fontWeight: "700", marginTop: 4 }}>{stat.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 12,
+              }}
+            >
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 18 }}>Ringkasan Profit</Text>
+              <View style={{ gap: 8 }}>
+                {[
+                  { label: "Profit total", value: totalProfitLabel, color: totalProfit >= 0 ? "#16A34A" : "#DC2626" },
+                  { label: "Barang terjual", value: totalQtyDisplay },
+                  { label: "Profit per pcs", value: unitProfitLabel, color: unitProfit >= 0 ? "#16A34A" : "#DC2626" },
+                  { label: "Penjualan terakhir", value: lastSaleDisplay },
+                ].map(stat => (
+                  <View key={stat.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ color: "#64748B" }}>{stat.label}</Text>
+                    <Text style={{ color: stat.color || "#0F172A", fontWeight: "600" }}>{stat.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+                padding: 24,
+                gap: 12,
+              }}
+            >
+              <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 18 }}>Riwayat Stok Terbaru</Text>
+              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{historyPreviewNotice}</Text>
+              {historyPreview.length ? (
+                <View style={{ gap: 12 }}>
+                  {historyPreview.map(entry => {
+                    const typeLabel = entry.type === "IN" ? "Barang Masuk" : "Barang Keluar";
+                    const typeColor = entry.type === "IN" ? "#0F766E" : "#DC2626";
+                    const qtyLabel = `${formatNumberValue(entry.qty)} pcs`;
+                    return (
+                      <View key={entry.id} style={{ borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 16, padding: 16, gap: 8 }}>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View>
+                            <Text style={{ color: typeColor, fontWeight: "700" }}>{typeLabel}</Text>
+                            <Text style={{ color: "#64748B", fontSize: 12 }}>{qtyLabel}</Text>
+                          </View>
+                          <Text style={{ color: "#94A3B8", fontSize: 12 }}>
+                            {formatDateTimeDisplay(entry.createdAt)}
+                          </Text>
+                        </View>
+                        {entry.type === "OUT" ? (
+                          <View style={{ gap: 4 }}>
+                            <Text style={{ color: "#0F172A" }}>
+                              Harga jual: {formatCurrencyValue(entry.unitPrice || item.price)}
+                            </Text>
+                            <Text style={{ color: "#0F172A" }}>
+                              Harga modal: {formatCurrencyValue(entry.unitCost || item.costPrice)}
+                            </Text>
+                            <Text style={{ color: entry.profitAmount >= 0 ? "#16A34A" : "#DC2626", fontWeight: "600" }}>
+                              Profit: {`${entry.profitAmount >= 0 ? "+" : "-"} ${formatCurrencyValue(
+                                Math.abs(entry.profitAmount ?? 0),
+                              )}`}
+                            </Text>
+                          </View>
+                        ) : entry.unitCost ? (
+                          <Text style={{ color: "#0F172A" }}>
+                            Harga modal: {formatCurrencyValue(entry.unitCost)}
+                          </Text>
+                        ) : null}
+                        {entry.note ? <Text style={{ color: "#475569" }}>Catatan: {entry.note}</Text> : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <Ionicons name="time-outline" size={28} color="#CBD5F5" />
+                  <Text style={{ color: "#94A3B8", marginTop: 8 }}>Belum ada riwayat stok.</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </ViewShot>
+      </View>
     </SafeAreaView>
   );
 }

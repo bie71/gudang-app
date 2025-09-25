@@ -80,11 +80,25 @@ export function buildBookkeepingReportFileBase(range = {}) {
   return `laporan-pembukuan_${startSlug}_sd_${endSlug}`;
 }
 
+export function buildBookkeepingEntryImageFileBase(entry = {}) {
+  const nameSlug = safeSlug(entry?.name || "pembukuan");
+  const dateValue = entry?.entryDate || entry?.entry_date || entry?.createdAt || entry?.created_at || new Date();
+  const dateSlug = safeSlug(formatDateInputValue(dateValue));
+  const idPart = entry?.id ? `_${entry.id}` : "";
+  return `pembukuan_${nameSlug}_${dateSlug}${idPart}`;
+}
+
 export function buildItemsReportFileBase(range = {}) {
   const todaySlug = safeSlug(formatDateInputValue(new Date()));
   const startSlug = range.startDate ? safeSlug(range.startDate) : todaySlug;
   const endSlug = range.endDate ? safeSlug(range.endDate) : startSlug;
   return `laporan-barang_${startSlug}_sd_${endSlug}`;
+}
+
+export function buildItemImageFileBase(item = {}) {
+  const nameSlug = safeSlug(item?.name || "barang");
+  const idPart = item?.id ? `_${item.id}` : "";
+  return `barang_${nameSlug}${idPart}`;
 }
 
 export function buildPurchaseOrdersReportFileBase(range = {}) {
