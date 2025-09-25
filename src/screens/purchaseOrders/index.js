@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Alert,
   ScrollView,
   Dimensions,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +27,7 @@ import { exec } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import {
   buildPOFileBase,
+  buildPurchaseOrdersReportFileBase,
   formatCurrencyValue,
   formatDateDisplay,
   formatDateInputValue,
@@ -105,6 +108,27 @@ const ITEM_TABLE_QTY_UNIT_TEXT = {
   flexShrink: 0,
 };
 
+function buildDefaultReportRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return {
+    startDate: formatDateInputValue(start),
+    endDate: formatDateInputValue(now),
+  };
+}
+
+function escapeHtml(value) {
+  if (value == null) return "";
+  const map = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  return String(value).replace(/[&<>"']/g, char => map[char] || char);
+}
+
 export function PurchaseOrdersScreen({ navigation }) {
   const PAGE_SIZE = 20;
   const [orders, setOrders] = useState([]);
@@ -113,6 +137,11 @@ export function PurchaseOrdersScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [reportModalState, setReportModalState] = useState(() => ({
+    visible: false,
+    ...buildDefaultReportRange(),
+  }));
+  const [reportGenerating, setReportGenerating] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -239,6 +268,320 @@ export function PurchaseOrdersScreen({ navigation }) {
     }
   };
 
+  const openReportModal = () => {
+    const defaults = buildDefaultReportRange();
+    setReportModalState({ visible: true, ...defaults });
+  };
+
+  const closeReportModal = useCallback(() => {
+    if (reportGenerating) return;
+    setReportModalState(prev => ({ ...prev, visible: false }));
+  }, [reportGenerating]);
+
+  const handleGenerateReport = useCallback(async () => {
+    const { startDate, endDate } = reportModalState;
+    if (!startDate || !endDate) {
+      Alert.alert("Validasi", "Tanggal mulai dan akhir wajib dipilih.");
+      return;
+    }
+    if (startDate > endDate) {
+      Alert.alert("Validasi", "Tanggal mulai tidak boleh melebihi tanggal akhir.");
+      return;
+    }
+    if (reportGenerating) return;
+    setReportGenerating(true);
+    try {
+      const res = await exec(
+        `
+          SELECT
+            po.id,
+            po.order_date,
+            po.created_at,
+            po.completed_at,
+            po.orderer_name,
+            po.supplier_name,
+            po.status,
+            po.note,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE po.order_date BETWEEN ? AND ?
+          GROUP BY po.id
+          ORDER BY po.order_date ASC, po.id ASC
+        `,
+        [startDate, endDate],
+      );
+      const rows = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        rows.push({
+          id: row.id,
+          orderDate: row.order_date,
+          createdAt: row.created_at,
+          completedAt: row.completed_at,
+          ordererName: row.orderer_name,
+          supplierName: row.supplier_name,
+          status: row.status,
+          note: row.note,
+          totalQuantity: Number(row.total_quantity ?? 0),
+          totalValue: Number(row.total_value ?? 0),
+          totalCost: Number(row.total_cost ?? 0),
+          itemCount: Number(row.item_count ?? 0),
+          primaryItemName: row.primary_item_name,
+        });
+      }
+      if (!rows.length) {
+        Alert.alert("Tidak Ada Data", "Tidak ada purchase order dalam rentang tanggal tersebut.");
+        return;
+      }
+
+      let totalValueSum = 0;
+      let totalQuantitySum = 0;
+      let totalCostSum = 0;
+      let totalProfitSum = 0;
+      const statusCounts = {};
+      const supplierSet = new Set();
+      const generatedAt = formatDateTimeDisplay(new Date().toISOString());
+
+      const rowsHtml = rows
+        .map((entry, index) => {
+          totalValueSum += entry.totalValue;
+          totalQuantitySum += entry.totalQuantity;
+          const totalCost = entry.totalCost ?? 0;
+          const totalProfit = entry.totalValue - totalCost;
+          totalCostSum += totalCost;
+          totalProfitSum += totalProfit;
+          const statusKey = entry.status || "PROGRESS";
+          statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
+          if (entry.supplierName) {
+            supplierSet.add(entry.supplierName.trim().toLowerCase());
+          }
+          const statusLabel = getPOStatusStyle(entry.status).label;
+          const supplierLabel = entry.supplierName ? escapeHtml(entry.supplierName) : "Tanpa pemasok";
+          const ordererLabel = entry.ordererName ? escapeHtml(entry.ordererName) : "Tanpa pemesan";
+          const noteText = entry.note ? escapeHtml(entry.note) : "-";
+          const orderDateDisplay = escapeHtml(formatDateDisplay(entry.orderDate));
+          const createdDisplay = escapeHtml(formatDateTimeDisplay(entry.createdAt));
+          const completedDisplay = escapeHtml(
+            entry.completedAt ? formatDateTimeDisplay(entry.completedAt) : "Belum selesai",
+          );
+          const qtyDisplay = escapeHtml(formatNumberValue(entry.totalQuantity));
+          const valueDisplay = escapeHtml(formatCurrencyValue(entry.totalValue));
+          const costDisplay = escapeHtml(formatCurrencyValue(totalCost));
+          const profitDisplay = escapeHtml(
+            `${totalProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(totalProfit))}`,
+          );
+          const profitClass = totalProfit >= 0 ? "profit profit--positive" : "profit profit--negative";
+          const itemLabel = buildOrderItemLabel(entry.primaryItemName, entry.itemCount || (entry.primaryItemName ? 1 : 0));
+          const itemCountLabel = escapeHtml(`${formatNumberValue(entry.itemCount || (entry.primaryItemName ? 1 : 0))} barang`);
+          return `
+            <tr>
+              <td class="col-index">${index + 1}</td>
+              <td class="col-date">
+                <div class="date-main">${orderDateDisplay}</div>
+                <div class="date-sub">Dibuat: ${createdDisplay}</div>
+                <div class="date-sub">Selesai: ${completedDisplay}</div>
+              </td>
+              <td class="col-party">
+                <div class="party-name">${supplierLabel}</div>
+                <div class="party-meta">Pemesan: ${ordererLabel}</div>
+              </td>
+              <td class="col-status">${escapeHtml(statusLabel)}</td>
+              <td class="col-item">
+                <div class="item-name">${escapeHtml(itemLabel)}</div>
+                <div class="item-meta">${itemCountLabel}</div>
+              </td>
+              <td class="col-qty">${qtyDisplay}</td>
+              <td class="col-amount">${valueDisplay}</td>
+              <td class="col-cost">${costDisplay}</td>
+              <td class="col-profit"><span class="${profitClass}">${profitDisplay}</span></td>
+              <td class="col-note">${noteText}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      const marginOverall = totalValueSum > 0 ? (totalProfitSum / totalValueSum) * 100 : 0;
+      const marginDisplay = `${totalProfitSum >= 0 ? "" : "-"}${Math.abs(marginOverall).toLocaleString("id-ID", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}%`;
+      const summaryCards = [
+        { title: "Total Purchase Order", value: formatNumberValue(rows.length) },
+        { title: "Total Nilai PO", value: formatCurrencyValue(totalValueSum) },
+        { title: "Total Modal", value: formatCurrencyValue(totalCostSum) },
+        {
+          title: "Total Profit",
+          value: `${totalProfitSum >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(totalProfitSum))}`,
+          highlight: totalProfitSum >= 0 ? "positive" : "negative",
+        },
+        { title: "Margin Keseluruhan", value: marginDisplay },
+        { title: "Total Qty Barang", value: `${formatNumberValue(totalQuantitySum)} pcs` },
+        { title: "Supplier Unik", value: formatNumberValue(supplierSet.size) },
+      ];
+
+      PO_STATUS_OPTIONS.forEach(status => {
+        const label = PO_STATUS_STYLES[status]?.label || status;
+        summaryCards.push({
+          title: `Status ${label}`,
+          value: formatNumberValue(statusCounts[status] || 0),
+        });
+      });
+
+      const summaryHtml = summaryCards
+        .map(card => {
+          const highlightClass =
+            card.highlight === "positive" ? " summary-item--positive" : card.highlight === "negative" ? " summary-item--negative" : "";
+          return `
+            <div class="summary-item${highlightClass}">
+              <h2>${escapeHtml(card.title)}</h2>
+              <p>${escapeHtml(card.value)}</p>
+            </div>
+          `;
+        })
+        .join("");
+
+      const startDisplay = escapeHtml(formatDateDisplay(startDate));
+      const endDisplay = escapeHtml(formatDateDisplay(endDate));
+      const fileBase = buildPurchaseOrdersReportFileBase({ startDate, endDate });
+      const html = `
+        <!DOCTYPE html>
+        <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <title>Laporan Purchase Order</title>
+            <style>
+              @page { size: A4; margin: 24px 32px; }
+              * { box-sizing: border-box; font-family: 'Inter', 'Helvetica', 'Arial', sans-serif; }
+              .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
+              .header h1 { margin: 0; font-size: 28px; }
+              .range { color: #64748b; margin-top: 4px; font-size: 14px; }
+              .summary { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+              .summary-item { background: #f8fafc; border-radius: 16px; padding: 18px 20px; flex: 1 1 210px; }
+              .summary-item h2 { margin: 0 0 8px; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+              .summary-item p { margin: 0; font-size: 18px; font-weight: 600; color: #0f172a; }
+              table { width: 100%; border-collapse: collapse; margin-top: 12px; background: #eaeef3ff; }
+              thead { background: #f8fafc; }
+              th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+              th { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+              td { font-size: 13px; color: #0f172a; }
+              .col-index { width: 48px; text-align: center; }
+              .col-date { width: 160px; }
+              .col-party { width: 200px; }
+              .col-status { width: 110px; text-transform: uppercase; font-weight: 600; text-align: center; }
+              .col-item { width: 200px; }
+              .col-qty { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+              .col-amount { width: 140px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+              .col-cost { width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
+              .col-profit { width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
+              .col-note { width: 220px; }
+              .party-name { font-weight: 600; }
+              .party-meta { color: #64748b; font-size: 12px; margin-top: 4px; }
+              .item-name { font-weight: 600; }
+              .item-meta { color: #64748b; font-size: 12px; margin-top: 4px; }
+              .date-main { font-weight: 600; }
+              .date-sub { color: #64748b; font-size: 11px; margin-top: 4px; }
+              .profit { font-weight: 600; }
+              .profit--positive { color: #16a34a; }
+              .profit--negative { color: #dc2626; }
+              .summary-item--positive { border: 1px solid rgba(22, 163, 74, 0.25); }
+              .summary-item--negative { border: 1px solid rgba(220, 38, 38, 0.25); }
+              tfoot td { font-weight: 700; color: #0f172a; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="header">
+                <div>
+                  <p style="letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; margin: 0 0 8px;">Laporan</p>
+                  <h1>Purchase Order</h1>
+                  <p class="range">${startDisplay} - ${endDisplay}</p>
+                </div>
+              </div>
+              <div class="summary">
+                ${summaryHtml}
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th class="col-index">No</th>
+                    <th class="col-date">Tanggal</th>
+                    <th class="col-party">Supplier</th>
+                    <th class="col-status">Status</th>
+                    <th class="col-item">Ringkasan Item</th>
+                    <th class="col-qty">Qty</th>
+                    <th class="col-amount">Nilai</th>
+                    <th class="col-cost">Modal</th>
+                    <th class="col-profit">Profit</th>
+                    <th class="col-note">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="5" style="text-align: right;">Total</td>
+                    <td class="col-qty">${escapeHtml(formatNumberValue(totalQuantitySum))}</td>
+                    <td class="col-amount">${escapeHtml(formatCurrencyValue(totalValueSum))}</td>
+                    <td class="col-cost">${escapeHtml(formatCurrencyValue(totalCostSum))}</td>
+                    <td class="col-profit">
+                      <span class="profit ${totalProfitSum >= 0 ? "profit--positive" : "profit--negative"}">
+                        ${escapeHtml(`${totalProfitSum >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(totalProfitSum))}`)}
+                      </span>
+                    </td>
+                    <td class="col-note"></td>
+                  </tr>
+                </tfoot>
+              </table>
+              <p style="margin-top: 24px; font-size: 12px; color: #64748b;">
+                Rumus: <strong>Modal</strong> = Σ(Qty × Harga Modal), <strong>Nilai</strong> = Σ(Qty × Harga Jual), dan <strong>Profit</strong> = Nilai − Modal.
+                Laporan dicetak pada <strong>${escapeHtml(generatedAt)}</strong>.
+              </p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false, fileName: fileBase });
+      const { uri: savedUri, location: savedLocation, notice: savedNotice, displayPath: savedDisplayPath } = await saveFileToStorage(
+        uri,
+        `${fileBase}.pdf`,
+        "application/pdf",
+      );
+      if (await Sharing.isAvailableAsync()) {
+        const shareUri = await resolveShareableUri(`${fileBase}-share.pdf`, uri, savedUri);
+        if (shareUri) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Bagikan Laporan Purchase Order",
+            UTI: "com.adobe.pdf",
+          });
+        }
+      }
+      const locationMessage = savedDisplayPath
+        ? `File tersimpan di ${savedDisplayPath}.`
+        : savedLocation === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${savedUri}.`;
+      const alertMessage = savedNotice ? `${savedNotice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Laporan Dibuat", alertMessage);
+      setReportModalState(prev => ({ ...prev, visible: false }));
+    } catch (error) {
+      console.log("PO REPORT ERROR:", error);
+      Alert.alert("Gagal", "Laporan purchase order tidak dapat dibuat saat ini.");
+    } finally {
+      setReportGenerating(false);
+    }
+  }, [reportModalState, reportGenerating]);
+
   const renderItem = ({ item }) => {
     const statusStyle = getPOStatusStyle(item.status);
     const totalValue = item.totalValue ?? 0;
@@ -283,16 +626,34 @@ export function PurchaseOrdersScreen({ navigation }) {
       <View style={{ padding: 16, flex: 1 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A" }}>Purchase Order</Text>
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("AddPurchaseOrder", {
-                onDone: () => loadOrders({ search: searchTerm, reset: true }),
-              })
-            }
-            style={{ backgroundColor: "#14B8A6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>+ PO</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <TouchableOpacity
+              onPress={openReportModal}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#2563EB",
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 12,
+                gap: 6,
+              }}
+            >
+              <Ionicons name="document-text-outline" size={18} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("AddPurchaseOrder", {
+                  onDone: () => loadOrders({ search: searchTerm, reset: true }),
+                })
+              }
+              style={{ backgroundColor: "#14B8A6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>+ PO</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <TextInput
           placeholder="Cari nama barang, pemasok, atau catatan..."
@@ -340,6 +701,71 @@ export function PurchaseOrdersScreen({ navigation }) {
           contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
+
+      <Modal
+        visible={reportModalState.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeReportModal}
+        statusBarTranslucent
+      >
+        <Pressable
+          onPress={closeReportModal}
+          style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.55)" }}
+        />
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            paddingBottom: 24,
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.12,
+            shadowRadius: 16,
+            elevation: 6,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Laporan Purchase Order</Text>
+            <TouchableOpacity onPress={closeReportModal} disabled={reportGenerating}>
+              <Ionicons name="close" size={22} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: "#64748B", marginTop: 6 }}>
+            Pilih rentang tanggal untuk membuat laporan purchase order dalam format PDF.
+          </Text>
+          <View style={{ marginTop: 18 }}>
+            <DatePickerField
+              label="Tanggal Mulai"
+              value={reportModalState.startDate}
+              onChange={value => setReportModalState(prev => ({ ...prev, startDate: value }))}
+            />
+            <DatePickerField
+              label="Tanggal Akhir"
+              value={reportModalState.endDate}
+              onChange={value => setReportModalState(prev => ({ ...prev, endDate: value }))}
+            />
+          </View>
+          <TouchableOpacity
+            onPress={handleGenerateReport}
+            disabled={reportGenerating}
+            style={{
+              marginTop: 12,
+              backgroundColor: reportGenerating ? "#93C5FD" : "#2563EB",
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: "center",
+            }}
+          >
+            {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Generate PDF</Text>}
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
