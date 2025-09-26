@@ -527,7 +527,7 @@ export function BookkeepingScreen({ navigation }) {
       setKeyboardInset(0);
     };
   }, [adjustModal.visible, insets.bottom]);
-  const keyboardPadding = keyboardInset > 0 ? keyboardInset-100: 0;
+  const keyboardPadding = keyboardInset > 0 ? keyboardInset -110: 0;
   const containerPaddingBottom = modalBottomInset + keyboardPadding;
   const keyboardVerticalOffset = Platform.select({
     ios: insets.top + 24,
@@ -1344,7 +1344,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       setKeyboardInset(0);
     };
   }, [adjustModal.visible, insets.bottom]);
-  const keyboardPadding = keyboardInset > 0 ? keyboardInset + 16 : 0;
+  const keyboardPadding = keyboardInset > 0 ? keyboardInset -110 : 0;
   const containerPaddingBottom = modalBottomInset + keyboardPadding;
   const keyboardVerticalOffset = Platform.select({
     ios: insets.top + 24,
