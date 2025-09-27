@@ -1502,7 +1502,8 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       : totalHistoryCount
       ? `Menampilkan ${formatNumberValue(historyPreview.length)} riwayat`
       : "Tidak ada riwayat";
-  const showFullHistoryButton = totalHistoryCount > historyPreview.length;
+  const showFullHistoryButton =
+    totalHistoryCount > historyPreview.length || history.length > historyPreviewLimit;
   const modalBottomInset = Math.max(insets.bottom, 16);
   const keyboardPadding = keyboardInset > 0 ? keyboardInset - 110 : 0;
   const containerPaddingBottom = modalBottomInset + keyboardPadding;

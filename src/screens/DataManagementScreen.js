@@ -3,8 +3,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
-import { makeRedirectUri } from "expo-auth-session";
 import Constants from "expo-constants";
 
 import { exportDatabaseBackup, importDatabaseBackup, getBackupJson } from "../services/backup";
@@ -16,6 +16,8 @@ import {
   saveDriveToken,
   uploadBackupToDrive,
 } from "../services/googleDrive";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function DataManagementScreen({ navigation }) {
   const [csvExporting, setCsvExporting] = useState(false);
@@ -43,35 +45,22 @@ export default function DataManagementScreen({ navigation }) {
   );
 
   const hasGoogleConfig = useMemo(
-    () => Boolean(googleConfig.expoClientId || googleConfig.androidClientId || googleConfig.iosClientId || googleConfig.webClientId),
-    [googleConfig],
-  );
-
-  const hookConfig = useMemo(
-    () => ({
-      expoClientId: googleConfig.expoClientId || "placeholder-expo-client-id",
-      androidClientId: googleConfig.androidClientId || "placeholder-android-client-id",
-      iosClientId: googleConfig.iosClientId || "placeholder-ios-client-id",
-      webClientId: googleConfig.webClientId || "placeholder-web-client-id",
-    }),
-    [googleConfig],
-  );
-
-  const redirectUri = useMemo(
     () =>
-      makeRedirectUri({
-        scheme: Constants?.expoConfig?.scheme || Constants?.manifest?.scheme || "gudangapp",
-        useProxy: !hasGoogleConfig || Constants?.appOwnership === "expo",
-      }),
-    [hasGoogleConfig],
+      Boolean(
+        googleConfig.androidClientId ||
+          googleConfig.iosClientId ||
+          googleConfig.webClientId ||
+          googleConfig.expoClientId,
+      ),
+    [googleConfig],
   );
 
   const [request, , promptAsync] = Google.useAuthRequest({
-    ...hookConfig,
-    responseType: "token",
-    scopes: ["https://www.googleapis.com/auth/drive.file"],
-    usePKCE: false,
-    redirectUri,
+    androidClientId: googleConfig.androidClientId,
+    iosClientId: googleConfig.iosClientId,
+    expoClientId: googleConfig.expoClientId,
+    webClientId: googleConfig.webClientId,
+    scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file"],
   });
 
   useEffect(() => {
