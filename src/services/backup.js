@@ -118,7 +118,7 @@ function sanitizeRow(row, columns) {
   return output;
 }
 
-export async function exportDatabaseBackup() {
+async function buildBackupPayload() {
   const tables = {};
   for (const table of INSERT_ORDER) {
     const query = EXPORT_QUERIES[table];
@@ -133,9 +133,13 @@ export async function exportDatabaseBackup() {
     exportedAt: new Date().toISOString(),
     tables,
   };
-
   const fileBase = buildTimestampedFileBase("gudang-backup");
   const json = JSON.stringify(payload, null, 2);
+  return { payload, fileBase, json };
+}
+
+export async function exportDatabaseBackup() {
+  const { json, fileBase } = await buildBackupPayload();
   const tempDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
   if (!tempDir) throw new Error("CACHE_DIRECTORY_UNAVAILABLE");
   const tempPath = `${tempDir}${fileBase}.json`;
@@ -149,6 +153,14 @@ export async function exportDatabaseBackup() {
   return {
     ...saved,
     fileName: `${fileBase}.json`,
+  };
+}
+
+export async function getBackupJson() {
+  const { json, fileBase } = await buildBackupPayload();
+  return {
+    fileName: `${fileBase}.json`,
+    json,
   };
 }
 

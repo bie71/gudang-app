@@ -1,5 +1,6 @@
 {
   "expo": {
+    "scheme": "gudangapp",
     "name": "Gudang App",
     "slug": "gudang-app",
     "version": "1.4.0",
