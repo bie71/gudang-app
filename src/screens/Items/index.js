@@ -486,6 +486,7 @@ export function ItemsScreen({ navigation }) {
               height: 44,
               marginBottom: 10,
             }}
+            placeholderTextColor="#94A3B8"
           />
           <View style={{ flexDirection: "row", gap: 8 }}>
             <TouchableOpacity

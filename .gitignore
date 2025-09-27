@@ -3,3 +3,5 @@ node_modules
 *.log
 gudang.db
 android
+my-release-key.jks
+.env
