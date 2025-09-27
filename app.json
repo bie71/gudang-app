@@ -3,7 +3,7 @@
     "scheme": "gudangapp",
     "name": "Gudang App",
     "slug": "gudang-app",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.company.gudang",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
