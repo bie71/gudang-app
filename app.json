@@ -20,7 +20,8 @@
       }
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "ios": {
       "bundleIdentifier": "com.company.gudang"

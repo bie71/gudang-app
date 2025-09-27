@@ -126,7 +126,8 @@ export default function DataManagementScreen({ navigation }) {
     }
     try {
       setAuthLoading(true);
-      const result = await promptAsync();
+      const useProxy = Constants?.executionEnvironment === "storeClient";
+      const result = await promptAsync({ useProxy, showInRecents: true });
       if (result?.type === "success" && result.authentication?.accessToken) {
         const expiresIn = result.authentication.expiresIn ?? 3600;
         const saved = await saveDriveToken({
@@ -275,7 +276,7 @@ export default function DataManagementScreen({ navigation }) {
   const googleLoggedIn = Boolean(driveToken && isDriveTokenValid(driveToken));
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", marginTop: -50}}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 6 }}>Manajemen Data</Text>
         <Text style={{ color: "#64748B", marginBottom: 20 }}>
