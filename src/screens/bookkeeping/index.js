@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
+  RefreshControl,
   TextInput,
   TouchableOpacity,
   FlatList,
@@ -28,6 +29,7 @@ import Input from "../../components/Input";
 import ViewShot from "react-native-view-shot";
 import { exec } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
+import { exportBookkeepingCsv } from "../../services/export";
 import {
   buildBookkeepingReportFileBase,
   buildBookkeepingEntryImageFileBase,
@@ -61,6 +63,13 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => map[char] || char);
 }
 
+function emitBookkeepingRefreshEvent(navigation) {
+  const parent = typeof navigation?.getParent === "function" ? navigation.getParent() : null;
+  if (!parent || typeof parent.emit !== "function") return;
+  const targetKey = typeof parent.getState === "function" ? parent.getState().key : undefined;
+  parent.emit({ type: "bookkeeping:refresh", target: targetKey });
+}
+
 export function BookkeepingScreen({ navigation }) {
   const PAGE_SIZE = 20;
   const insets = useSafeAreaInsets();
@@ -76,6 +85,7 @@ export function BookkeepingScreen({ navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
   const [adjustModal, setAdjustModal] = useState({
     visible: false,
     mode: "ADD",
@@ -88,6 +98,14 @@ export function BookkeepingScreen({ navigation }) {
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
+  const navigateToRoot = useCallback(
+    (routeName, params) => {
+      const parent = typeof navigation.getParent === "function" ? navigation.getParent() : null;
+      if (parent?.navigate) parent.navigate(routeName, params);
+      else navigation.navigate(routeName, params);
+    },
+    [navigation],
+  );
 
   useEffect(() => {
     loadEntries({ search: searchTerm, reset: true });
@@ -107,6 +125,16 @@ export function BookkeepingScreen({ navigation }) {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
+      loadEntries({ search: searchTerm, reset: true });
+      loadSummary();
+    });
+    return unsubscribe;
+  }, [navigation, searchTerm]);
+
+  useEffect(() => {
+    const parent = navigation.getParent();
+    if (!parent) return undefined;
+    const unsubscribe = parent.addListener("bookkeeping:refresh", () => {
       loadEntries({ search: searchTerm, reset: true });
       loadSummary();
     });
@@ -236,8 +264,10 @@ export function BookkeepingScreen({ navigation }) {
     }
     const delta = mode === "ADD" ? parsedAmount : -parsedAmount;
     setAdjustModal(prev => ({ ...prev, loading: true }));
+    let transactionActive = false;
     try {
       await exec("BEGIN TRANSACTION");
+      transactionActive = true;
       const currentRes = await exec(`SELECT amount FROM bookkeeping_entries WHERE id = ?`, [entry.id]);
       const currentRow = currentRes.rows.length ? currentRes.rows.item(0) : { amount: entry.amount ?? 0 };
       const currentAmount = Number(currentRow.amount ?? 0);
@@ -256,15 +286,21 @@ export function BookkeepingScreen({ navigation }) {
         ],
       );
       await exec("COMMIT");
+      transactionActive = false;
       closeAdjustModal();
       loadSummary();
       loadEntries({ search: searchTerm, reset: true });
     } catch (error) {
       console.log("BOOKKEEPING ADJUST ERROR:", error);
-      try {
-        await exec("ROLLBACK");
-      } catch (rollbackError) {
-        console.log("BOOKKEEPING ADJUST ROLLBACK ERROR:", rollbackError);
+      if (transactionActive) {
+        try {
+          await exec("ROLLBACK");
+        } catch (rollbackError) {
+          const message = String(rollbackError?.message || rollbackError);
+          if (!message.includes("no transaction is active")) {
+            console.log("BOOKKEEPING ADJUST ROLLBACK ERROR:", rollbackError);
+          }
+        }
       }
       setAdjustModal(prev => ({ ...prev, loading: false }));
       Alert.alert("Gagal", "Perubahan nominal tidak dapat disimpan.");
@@ -430,6 +466,32 @@ export function BookkeepingScreen({ navigation }) {
     }
   }, [reportModalState]);
 
+  const handleExportCsv = useCallback(async () => {
+    if (csvExporting) return;
+    setCsvExporting(true);
+    try {
+      const result = await exportBookkeepingCsv();
+      if (result.shareUri) {
+        await Sharing.shareAsync(result.shareUri, {
+          mimeType: "text/csv",
+          dialogTitle: "Bagikan CSV Pembukuan",
+        });
+      }
+      const locationMessage = result.displayPath
+        ? `File tersimpan di ${result.displayPath}.`
+        : result.location === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${result.uri}.`;
+      const alertMessage = result.notice ? `${result.notice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Berhasil", alertMessage);
+    } catch (error) {
+      console.log("EXPORT BOOKKEEPING CSV ERROR:", error);
+      Alert.alert("Gagal", "CSV pembukuan tidak dapat dibuat saat ini.");
+    } finally {
+      setCsvExporting(false);
+    }
+  }, [csvExporting]);
+
   const renderItem = ({ item }) => (
     <View
       style={{
@@ -444,13 +506,9 @@ export function BookkeepingScreen({ navigation }) {
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() =>
-          navigation.navigate("BookkeepingDetail", {
+          navigateToRoot("BookkeepingDetail", {
             entryId: item.id,
             initialEntry: item,
-            onDone: () => {
-              loadEntries({ search: searchTerm, reset: true });
-              loadSummary();
-            },
           })
         }
       >
@@ -607,12 +665,27 @@ export function BookkeepingScreen({ navigation }) {
             <Text style={{ color: "#fff", fontWeight: "700" }}>Laporan PDF</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={csvExporting}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
+              paddingHorizontal: 16,
+              borderRadius: 12,
+              height: 44,
+            }}
+          >
+            {csvExporting ? (
+              <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
+            ) : (
+              <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+            )}
+            <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor CSV</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={() =>
-              navigation.navigate("AddBookkeeping", {
-                onDone: () => {
-                  loadEntries({ search: searchTerm, reset: true });
-                  loadSummary();
-                },
+              navigateToRoot("AddBookkeeping", {
               })
             }
             style={{
@@ -859,7 +932,6 @@ export function BookkeepingScreen({ navigation }) {
 }
 
 export function AddBookkeepingScreen({ route, navigation }) {
-  const onDone = route.params?.onDone;
   const initialEntry = route.params?.entry || null;
   const [entryId, setEntryId] = useState(initialEntry?.id ?? null);
   const [name, setName] = useState(initialEntry?.name ?? "");
@@ -939,7 +1011,7 @@ export function AddBookkeepingScreen({ route, navigation }) {
           );
         }
       }
-      onDone && onDone();
+      emitBookkeepingRefreshEvent(navigation);
       navigation.goBack();
     } catch (error) {
       console.log("BOOKKEEPING SAVE ERROR:", error);
@@ -1011,7 +1083,6 @@ export function AddBookkeepingScreen({ route, navigation }) {
 
 export function BookkeepingDetailScreen({ route, navigation }) {
   const entryIdParam = route.params?.entryId;
-  const onDone = route.params?.onDone;
   const initialEntry = route.params?.initialEntry;
   const insets = useSafeAreaInsets();
   const normalizeEntry = useCallback(data => {
@@ -1028,6 +1099,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
 
   const [entry, setEntry] = useState(() => normalizeEntry(initialEntry));
   const [history, setHistory] = useState([]);
+  const [historyMeta, setHistoryMeta] = useState({ totalCount: 0, adjustmentCount: 0, initialAmount: null });
   const [loading, setLoading] = useState(() => !initialEntry);
   const [adjustModal, setAdjustModal] = useState({
     visible: false,
@@ -1041,6 +1113,26 @@ export function BookkeepingDetailScreen({ route, navigation }) {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const entryId = Number(entryIdParam);
   const HISTORY_LIMIT = 50;
+
+  useEffect(() => {
+    if (!adjustModal.visible) {
+      setKeyboardInset(0);
+      return () => undefined;
+    }
+    const showEvent = Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
+    const hideEvent = Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
+    const showSub = Keyboard.addListener(showEvent, event => {
+      const height = event?.endCoordinates?.height ?? 0;
+      const adjusted = Math.max(0, height - insets.bottom);
+      setKeyboardInset(adjusted);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+      setKeyboardInset(0);
+    };
+  }, [adjustModal.visible, insets.bottom]);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(entryId)) {
@@ -1058,6 +1150,7 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       if (!res.rows.length) {
         setEntry(null);
         setHistory([]);
+        setHistoryMeta({ totalCount: 0, adjustmentCount: 0, initialAmount: null });
         return;
       }
       const row = res.rows.item(0);
@@ -1094,8 +1187,70 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         });
       }
       setHistory(historyRows);
+
+      let totalCount = historyRows.length;
+      let adjustmentCount = historyRows.filter(item => item.type !== "CREATE").length;
+      let initialAmountMeta = historyRows.length
+        ? Number(
+            historyRows[historyRows.length - 1].newAmount ??
+              historyRows[historyRows.length - 1].previousAmount ??
+              normalized.amount ?? 0,
+          )
+        : Number(normalized.amount ?? 0);
+
+      try {
+        const metaRes = await exec(
+          `
+            SELECT
+              COUNT(*) as total_count,
+              SUM(CASE WHEN type <> 'CREATE' THEN 1 ELSE 0 END) as adjustment_count
+            FROM bookkeeping_entry_history
+            WHERE entry_id = ?
+          `,
+          [entryId],
+        );
+        if (metaRes.rows.length) {
+          const metaRow = metaRes.rows.item(0);
+          const metaTotal = Number(metaRow.total_count);
+          const metaAdjust = Number(metaRow.adjustment_count);
+          if (Number.isFinite(metaTotal)) totalCount = metaTotal;
+          if (Number.isFinite(metaAdjust)) adjustmentCount = metaAdjust;
+        }
+
+        if (totalCount > 0) {
+          const earliestRes = await exec(
+            `
+              SELECT previous_amount, new_amount
+              FROM bookkeeping_entry_history
+              WHERE entry_id = ?
+              ORDER BY id ASC
+              LIMIT 1
+            `,
+            [entryId],
+          );
+          if (earliestRes.rows.length) {
+            const earliestRow = earliestRes.rows.item(0);
+            const baseAmountRaw =
+              earliestRow.new_amount != null
+                ? Number(earliestRow.new_amount)
+                : earliestRow.previous_amount != null
+                ? Number(earliestRow.previous_amount)
+                : initialAmountMeta;
+            if (Number.isFinite(baseAmountRaw)) initialAmountMeta = baseAmountRaw;
+          }
+        }
+      } catch (metaError) {
+        console.log("BOOKKEEPING DETAIL HISTORY META ERROR:", metaError);
+      }
+
+      setHistoryMeta({
+        totalCount: Number.isFinite(totalCount) ? totalCount : historyRows.length,
+        adjustmentCount: Number.isFinite(adjustmentCount) ? adjustmentCount : 0,
+        initialAmount: Number.isFinite(initialAmountMeta) ? initialAmountMeta : Number(normalized.amount ?? 0),
+      });
     } catch (error) {
       console.log("BOOKKEEPING DETAIL LOAD ERROR:", error);
+      setHistoryMeta({ totalCount: 0, adjustmentCount: 0, initialAmount: null });
     } finally {
       setLoading(false);
     }
@@ -1105,11 +1260,14 @@ export function BookkeepingDetailScreen({ route, navigation }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", load);
+    return unsubscribe;
+  }, [navigation, load]);
+
   const refreshParent = useCallback(() => {
-    if (typeof onDone === "function") {
-      onDone();
-    }
-  }, [onDone]);
+    emitBookkeepingRefreshEvent(navigation);
+  }, [navigation]);
 
   const handleGenerateReportImage = useCallback(async () => {
     if (!entry) return;
@@ -1180,8 +1338,10 @@ export function BookkeepingDetailScreen({ route, navigation }) {
     }
     const delta = mode === "ADD" ? parsedAmount : -parsedAmount;
     setAdjustModal(prev => ({ ...prev, loading: true }));
+    let transactionActive = false;
     try {
       await exec("BEGIN TRANSACTION");
+      transactionActive = true;
       const currentRes = await exec(`SELECT amount FROM bookkeeping_entries WHERE id = ?`, [entry.id]);
       const currentRow = currentRes.rows.length ? currentRes.rows.item(0) : { amount: entry.amount ?? 0 };
       const currentAmount = Number(currentRow.amount ?? 0);
@@ -1200,15 +1360,21 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         ],
       );
       await exec("COMMIT");
+      transactionActive = false;
       closeAdjustModal();
       refreshParent();
       load();
     } catch (error) {
       console.log("BOOKKEEPING DETAIL ADJUST ERROR:", error);
-      try {
-        await exec("ROLLBACK");
-      } catch (rollbackError) {
-        console.log("BOOKKEEPING DETAIL ADJUST ROLLBACK ERROR:", rollbackError);
+      if (transactionActive) {
+        try {
+          await exec("ROLLBACK");
+        } catch (rollbackError) {
+          const message = String(rollbackError?.message || rollbackError);
+          if (!message.includes("no transaction is active")) {
+            console.log("BOOKKEEPING DETAIL ADJUST ROLLBACK ERROR:", rollbackError);
+          }
+        }
       }
       setAdjustModal(prev => ({ ...prev, loading: false }));
       Alert.alert("Gagal", "Nominal tidak dapat diperbarui.");
@@ -1219,12 +1385,16 @@ export function BookkeepingDetailScreen({ route, navigation }) {
     if (!entry) return;
     navigation.navigate("AddBookkeeping", {
       entry,
-      onDone: () => {
-        load();
-        refreshParent();
-      },
     });
-  }, [entry, navigation, load, refreshParent]);
+  }, [entry, navigation]);
+
+  const openFullHistory = useCallback(() => {
+    if (!entry) return;
+    navigation.navigate("BookkeepingHistory", {
+      entryId: entry.id,
+      entryName: entry.name,
+    });
+  }, [entry, navigation]);
 
   const confirmDelete = useCallback(() => {
     if (!entry) return;
@@ -1302,49 +1472,39 @@ export function BookkeepingDetailScreen({ route, navigation }) {
       : adjustCurrentAmount + adjustAmountValue;
   const windowWidth = Dimensions.get("window").width;
   const reportWidth = Math.max(windowWidth - 48, 640);
-  const historyPreview = history.slice(0, 6);
-  const totalAdjustments = history.filter(item => item.type !== "CREATE").length;
+  const historyPreviewLimit = 15;
+  const historyPreview = history.slice(0, historyPreviewLimit);
+  const totalHistoryCount = Number.isFinite(Number(historyMeta.totalCount))
+    ? Number(historyMeta.totalCount)
+    : history.length;
+  const totalAdjustments = Number.isFinite(Number(historyMeta.adjustmentCount))
+    ? Number(historyMeta.adjustmentCount)
+    : history.filter(item => item.type !== "CREATE").length;
   const lastUpdatedDisplay = history.length
     ? formatDateTimeDisplay(history[0].createdAt)
     : entry.createdAt
     ? formatDateTimeDisplay(entry.createdAt)
     : "-";
-  const oldestHistory = history.length ? history[history.length - 1] : null;
-  const initialAmount = oldestHistory
+  const fallbackInitialAmount = history.length
     ? Number(
-        Number.isFinite(oldestHistory.previousAmount)
-          ? oldestHistory.previousAmount
-          : oldestHistory.newAmount ?? adjustCurrentAmount,
+        history[history.length - 1].newAmount ??
+          history[history.length - 1].previousAmount ??
+          adjustCurrentAmount,
       )
     : adjustCurrentAmount;
+  const initialAmountRaw = Number(historyMeta.initialAmount);
+  const initialAmount = Number.isFinite(initialAmountRaw) ? initialAmountRaw : fallbackInitialAmount;
   const netChange = adjustCurrentAmount - initialAmount;
   const netChangeLabel = `${netChange >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(netChange))}`;
-  const historyPreviewNotice = history.length > historyPreview.length
-    ? `Menampilkan ${historyPreview.length} dari ${history.length} riwayat terbaru`
-    : history.length
-    ? `Menampilkan ${historyPreview.length} riwayat`
-    : "Tidak ada riwayat";
+  const historyPreviewNotice =
+    totalHistoryCount > historyPreview.length
+      ? `Menampilkan ${formatNumberValue(historyPreview.length)} dari ${formatNumberValue(totalHistoryCount)} riwayat terbaru`
+      : totalHistoryCount
+      ? `Menampilkan ${formatNumberValue(historyPreview.length)} riwayat`
+      : "Tidak ada riwayat";
+  const showFullHistoryButton = totalHistoryCount > historyPreview.length;
   const modalBottomInset = Math.max(insets.bottom, 16);
-  useEffect(() => {
-    if (!adjustModal.visible) {
-      setKeyboardInset(0);
-      return undefined;
-    }
-    const showEvent = Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
-    const hideEvent = Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
-    const showSub = Keyboard.addListener(showEvent, event => {
-      const height = event?.endCoordinates?.height ?? 0;
-      const adjusted = Math.max(0, height - insets.bottom);
-      setKeyboardInset(adjusted);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
-    return () => {
-      showSub?.remove();
-      hideSub?.remove();
-      setKeyboardInset(0);
-    };
-  }, [adjustModal.visible, insets.bottom]);
-  const keyboardPadding = keyboardInset > 0 ? keyboardInset -110 : 0;
+  const keyboardPadding = keyboardInset > 0 ? keyboardInset - 110 : 0;
   const containerPaddingBottom = modalBottomInset + keyboardPadding;
   const keyboardVerticalOffset = Platform.select({
     ios: insets.top + 24,
@@ -1404,13 +1564,13 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         >
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Riwayat Perubahan</Text>
-            {history.length ? (
-              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`Menampilkan ${history.length} catatan`}</Text>
+            {historyPreview.length ? (
+              <Text style={{ color: "#94A3B8", fontSize: 12 }}>{historyPreviewNotice}</Text>
             ) : null}
           </View>
-          {history.length ? (
+          {historyPreview.length ? (
             <View style={{ marginTop: 12, gap: 12 }}>
-              {history.map(item => {
+              {historyPreview.map(item => {
                 const changeColor = item.changeAmount >= 0 ? "#16A34A" : "#DC2626";
                 const changeLabel = `${item.changeAmount >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(item.changeAmount))}`;
                 const typeLabel =
@@ -1444,6 +1604,21 @@ export function BookkeepingDetailScreen({ route, navigation }) {
                   </View>
                 );
               })}
+              {showFullHistoryButton ? (
+                <TouchableOpacity
+                  onPress={openFullHistory}
+                  style={{
+                    alignSelf: "flex-start",
+                    marginTop: 4,
+                    backgroundColor: "#2563EB",
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "600" }}>Lihat semua riwayat</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : (
             <View style={{ alignItems: "center", paddingVertical: 24 }}>
@@ -1569,6 +1744,21 @@ export function BookkeepingDetailScreen({ route, navigation }) {
                       </View>
                     );
                   })}
+                  {showFullHistoryButton ? (
+                    <TouchableOpacity
+                      onPress={openFullHistory}
+                      style={{
+                        marginTop: 8,
+                        alignSelf: "flex-start",
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        backgroundColor: "#2563EB",
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "600" }}>Lihat semua riwayat</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
                 <View style={{ alignItems: "center", paddingVertical: 24 }}>
@@ -1704,6 +1894,240 @@ export function BookkeepingDetailScreen({ route, navigation }) {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+    </SafeAreaView>
+  );
+}
+
+export function BookkeepingHistoryScreen({ route, navigation }) {
+  const entryIdParam = route.params?.entryId;
+  const entryName = route.params?.entryName || "Pembukuan";
+  const entryId = Number(entryIdParam);
+  const PAGE_SIZE = 20;
+  const [records, setRecords] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
+  const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    navigation.setOptions({
+      title: entryName ? `Riwayat • ${entryName}` : "Riwayat Pembukuan",
+    });
+  }, [entryName, navigation]);
+
+  const loadHistory = useCallback(
+    async ({ entryId: targetId = entryId, search = searchTerm, reset = false, mode = "default" } = {}) => {
+      if (!Number.isFinite(targetId)) return;
+      const normalizedSearch = (search || "").trim().toLowerCase();
+      const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+      const shouldReset = reset || isSearchChanged;
+      const offset = shouldReset ? 0 : pagingRef.current.offset;
+      const limit = PAGE_SIZE + 1;
+      const requestId = ++requestIdRef.current;
+
+      if (mode === "refresh") setRefreshing(true);
+      else if (mode === "loadMore") setLoadingMore(true);
+      else setLoading(true);
+
+      try {
+        const res = await exec(
+          `
+            SELECT id, change_amount, type, note, previous_amount, new_amount, created_at
+            FROM bookkeeping_entry_history
+            WHERE entry_id = ?
+              AND (? = '' OR LOWER(IFNULL(note,'')) LIKE ? OR LOWER(IFNULL(type,'')) LIKE ?)
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+          `,
+          [
+            targetId,
+            normalizedSearch,
+            `%${normalizedSearch}%`,
+            `%${normalizedSearch}%`,
+            limit,
+            offset,
+          ],
+        );
+        if (requestId !== requestIdRef.current) return;
+        const rowsArray = res.rows?._array ?? [];
+        const pageEntries = rowsArray.slice(0, PAGE_SIZE).map(row => ({
+          id: row.id,
+          changeAmount: Number(row.change_amount ?? 0),
+          type: row.type,
+          note: row.note,
+          previousAmount: Number(row.previous_amount ?? 0),
+          newAmount: Number(row.new_amount ?? 0),
+          createdAt: row.created_at,
+        }));
+        const nextOffset = offset + pageEntries.length;
+        setHasMore(rowsArray.length > PAGE_SIZE);
+        setRecords(prev => (shouldReset ? pageEntries : [...prev, ...pageEntries]));
+        pagingRef.current = { offset: nextOffset, search: normalizedSearch };
+      } catch (error) {
+        console.log("BOOKKEEPING HISTORY LOAD ERROR:", error);
+        if (mode === "default" || mode === "initial") {
+          Alert.alert("Gagal", "Riwayat tidak dapat dimuat.");
+        }
+      } finally {
+        if (requestId === requestIdRef.current) {
+          if (mode === "refresh") setRefreshing(false);
+          else if (mode === "loadMore") setLoadingMore(false);
+          else setLoading(false);
+        }
+      }
+    },
+    [entryId, searchTerm],
+  );
+
+  useEffect(() => {
+    if (!Number.isFinite(entryId)) {
+      setLoading(false);
+      setRecords([]);
+      return;
+    }
+    loadHistory({ reset: true, entryId, search: searchTerm, mode: "initial" });
+  }, [entryId]);
+
+  useEffect(() => {
+    if (!searchInitRef.current) {
+      searchInitRef.current = true;
+      return;
+    }
+    const handler = setTimeout(() => {
+      if (!Number.isFinite(entryId)) return;
+      loadHistory({ reset: true, entryId, search: searchTerm, mode: "search" });
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [entryId, searchTerm]);
+
+  const handleRefresh = useCallback(() => {
+    if (!Number.isFinite(entryId)) return;
+    loadHistory({ reset: true, entryId, search: searchTerm, mode: "refresh" });
+  }, [entryId, loadHistory, searchTerm]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingMore || !Number.isFinite(entryId)) return;
+    loadHistory({ reset: false, entryId, search: searchTerm, mode: "loadMore" });
+  }, [entryId, hasMore, loadingMore, loadHistory, searchTerm]);
+
+  const renderItem = useCallback(({ item }) => {
+    const changeColor = item.changeAmount >= 0 ? "#16A34A" : "#DC2626";
+    const changeLabel = `${item.changeAmount >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(item.changeAmount))}`;
+    const typeLabel =
+      item.type === "ADD"
+        ? "Penambahan"
+        : item.type === "SUBTRACT"
+        ? "Pengurangan"
+        : item.type === "CREATE"
+        ? "Catatan Baru"
+        : item.type === "EDIT"
+        ? "Perubahan"
+        : item.type || "-";
+    return (
+      <View
+        style={{ borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 16, padding: 16, gap: 8, marginBottom: 12 }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View>
+            <Text style={{ color: changeColor, fontWeight: "700" }}>{changeLabel}</Text>
+            <Text style={{ color: "#64748B", fontSize: 12 }}>{typeLabel}</Text>
+          </View>
+          <Text style={{ color: "#94A3B8", fontSize: 12 }}>{formatDateTimeDisplay(item.createdAt)}</Text>
+        </View>
+        <Text style={{ color: "#0F172A", fontWeight: "600" }}>
+          Saldo: {formatCurrencyValue(item.newAmount)}
+        </Text>
+        <Text style={{ color: "#94A3B8", fontSize: 12 }}>Sebelumnya: {formatCurrencyValue(item.previousAmount)}</Text>
+        {item.note ? <Text style={{ color: "#475569" }}>Catatan: {item.note}</Text> : null}
+      </View>
+    );
+  }, []);
+
+  if (!Number.isFinite(entryId)) {
+    return (
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center", padding: 24 }}
+      >
+        <Ionicons name="document-text-outline" size={42} color="#CBD5F5" />
+        <Text style={{ marginTop: 12, color: "#94A3B8", textAlign: "center" }}>
+          Riwayat pembukuan tidak ditemukan.
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 18, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: "#2563EB" }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Kembali</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <View style={{ padding: 16, paddingBottom: 8 }}>
+        <TextInput
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          placeholder="Cari catatan atau jenis riwayat"
+          placeholderTextColor="#94A3B8"
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            paddingHorizontal: 14,
+            height: 44,
+          }}
+        />
+      </View>
+      <FlatList
+        data={records}
+        keyExtractor={item => String(item.id)}
+        renderItem={renderItem}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+        ListEmptyComponent={
+          loading ? null : (
+            <View style={{ alignItems: "center", paddingTop: 48 }}>
+              <Ionicons name="time-outline" size={32} color="#CBD5F5" />
+              <Text style={{ marginTop: 12, color: "#94A3B8", textAlign: "center", paddingHorizontal: 16 }}>
+                Belum ada riwayat yang sesuai.
+              </Text>
+            </View>
+          )
+        }
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.6}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={["#2563EB"]} />}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={{ paddingVertical: 16, alignItems: "center" }}>
+              <ActivityIndicator color="#2563EB" />
+            </View>
+          ) : null
+        }
+      />
+      {loading && !records.length ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: "rgba(248,250,252,0.7)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator color="#2563EB" />
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

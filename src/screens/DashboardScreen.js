@@ -12,6 +12,7 @@ import {
   FlatList,
   Alert,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Dimensions,
 } from "react-native";
@@ -37,6 +38,7 @@ export default function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const modalKeyboardOffset = Platform.OS === "ios" ? insets.bottom + 16 : 0;
+  const isIOS = Platform.OS === "ios";
   const [metrics, setMetrics] = useState({
     totalStock: 0,
     totalItems: 0,
@@ -47,7 +49,11 @@ export default function DashboardScreen({ navigation }) {
     totalOutValue: 0,
     poCount: 0,
     poProgress: 0,
+    poProgressValue: 0,
     poTotalValue: 0,
+    poProgressProfit: 0,
+    poCancelledCount: 0,
+    poCancelledTotal: 0,
     bookkeepingCount: 0,
     bookkeepingTotal: 0,
     itemProfitTotal: 0,
@@ -69,6 +75,17 @@ export default function DashboardScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState("summary");
   const [tooltipTab, setTooltipTab] = useState(null);
   const detailPaging = useRef({ type: null, offset: 0, search: "" });
+  const detailSearchInputRef = useRef(null);
+  const [detailKeyboardInset, setDetailKeyboardInset] = useState(0);
+  const navigateToRoot = useCallback(
+    (routeName, params) => {
+      if (!navigation) return;
+      const parent = typeof navigation.getParent === "function" ? navigation.getParent() : null;
+      if (parent?.navigate) parent.navigate(routeName, params);
+      else navigation.navigate(routeName, params);
+    },
+    [navigation],
+  );
 
   const DETAIL_PAGE_SIZE = 20;
   const PAGINATED_CONFIG = {
@@ -164,14 +181,16 @@ export default function DashboardScreen({ navigation }) {
         const totalQuantity = Number(row.total_quantity ?? 0);
         const totalValue = Number(row.total_value ?? 0);
         const itemCount = Number(row.item_count ?? 0);
+        const totalProfit = Number(row.total_profit ?? 0);
         const primaryItemName = row.primary_item_name || "";
         const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
         const orderer = row.orderer_name ? row.orderer_name : "Tanpa pemesan";
         const statusLabel = getPOStatusStyle(row.status).label;
+        const profitLabel = `${totalProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(totalProfit))}`;
         return {
           key: String(row.id),
           title: itemName,
-          subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
+          subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel} • Est. ${profitLabel}`,
           trailingPrimary: formatCurrencyValue(totalValue),
           trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
           entityType: Number.isFinite(orderId) ? "po" : undefined,
@@ -229,6 +248,62 @@ export default function DashboardScreen({ navigation }) {
           key: String(row.id),
           title: itemName,
           subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • ${statusLabel}`,
+          trailingPrimary: formatCurrencyValue(totalValue),
+          trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
+          entityType: Number.isFinite(orderId) ? "po" : undefined,
+          entityId: Number.isFinite(orderId) ? orderId : null,
+        };
+      },
+    },
+    poCancelled: {
+      title: "PO Dibatalkan",
+      description: "Daftar purchase order yang dibatalkan.",
+      buildQuery: (search, limit, offset) => ({
+        sql: `
+          SELECT
+            po.id,
+            po.orderer_name,
+            po.supplier_name,
+            po.status,
+            po.order_date,
+            IFNULL(SUM(items.quantity), 0) as total_quantity,
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            COUNT(items.id) as item_count,
+            COALESCE(
+              (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+              ''
+            ) as primary_item_name
+          FROM purchase_orders po
+          LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE po.status = 'CANCELLED'
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.note,'')) LIKE ?
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items search_items
+                WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+              )
+            )
+          GROUP BY po.id
+          ORDER BY po.order_date DESC, po.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        params: [search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit + 1, offset],
+      }),
+      mapRow: row => {
+        const orderId = Number(row.id);
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const itemCount = Number(row.item_count ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
+        const orderer = row.orderer_name ? row.orderer_name : "Tanpa pemesan";
+        return {
+          key: String(row.id),
+          title: itemName,
+          subtitle: `${orderer} • ${formatDateDisplay(row.order_date)} • Dibatalkan`,
           trailingPrimary: formatCurrencyValue(totalValue),
           trailingSecondary: `${formatNumberValue(itemCount || (totalQuantity > 0 ? 1 : 0))} barang • ${formatNumberValue(totalQuantity)} pcs`,
           entityType: Number.isFinite(orderId) ? "po" : undefined,
@@ -389,7 +464,7 @@ export default function DashboardScreen({ navigation }) {
             IFNULL(SUM(items.quantity), 0) as total_qty,
             IFNULL(SUM(items.quantity * items.price), 0) as total_sales,
             IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
-            IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit,
+            IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit,
             COUNT(items.id) as item_count,
             COALESCE(
               (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
@@ -547,15 +622,19 @@ export default function DashboardScreen({ navigation }) {
       const poSummaryRes = await exec(`
         SELECT
           COUNT(*) as totalOrders,
-          IFNULL(SUM(total_quantity), 0) as totalQuantity,
+          SUM(CASE WHEN status = 'PROGRESS' THEN 1 ELSE 0 END) as progressOrders,
+          SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelledOrders,
           IFNULL(SUM(total_value), 0) as totalValue,
-          SUM(CASE WHEN status = 'PROGRESS' THEN 1 ELSE 0 END) as progressOrders
+          IFNULL(SUM(CASE WHEN status = 'PROGRESS' THEN total_value ELSE 0 END), 0) as progressValue,
+          IFNULL(SUM(CASE WHEN status = 'PROGRESS' THEN total_profit ELSE 0 END), 0) as progressProfit,
+          IFNULL(SUM(CASE WHEN status = 'CANCELLED' THEN total_value ELSE 0 END), 0) as cancelledValue
         FROM (
           SELECT
             po.id,
             po.status,
             IFNULL(SUM(items.quantity), 0) as total_quantity,
-            IFNULL(SUM(items.quantity * items.price), 0) as total_value
+            IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+            IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
           GROUP BY po.id
@@ -571,6 +650,7 @@ export default function DashboardScreen({ navigation }) {
           IFNULL(SUM(items.quantity), 0) as total_quantity,
           IFNULL(SUM(items.quantity * items.price), 0) as total_value,
           COUNT(items.id) as item_count,
+          IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit,
           COALESCE(
             (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
             ''
@@ -614,7 +694,7 @@ export default function DashboardScreen({ navigation }) {
         LIMIT 10
       `);
       const poProfitSummaryRes = await exec(`
-        SELECT IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit
+        SELECT IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit
         FROM purchase_orders po
         JOIN purchase_order_items items ON items.order_id = po.id
         WHERE po.status = 'DONE'
@@ -629,7 +709,7 @@ export default function DashboardScreen({ navigation }) {
           IFNULL(SUM(items.quantity), 0) as total_qty,
           IFNULL(SUM(items.quantity * items.price), 0) as total_value,
           IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
-          IFNULL(SUM(items.quantity * (items.price - items.cost_price)), 0) as total_profit,
+          IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit,
           COUNT(items.id) as item_count,
           COALESCE(
             (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
@@ -760,6 +840,10 @@ export default function DashboardScreen({ navigation }) {
         totalOutValue: Number(outRow.totalOutValue ?? 0),
         poCount: Number(poSummaryRow.totalOrders ?? 0),
         poProgress: Number(poSummaryRow.progressOrders ?? 0),
+        poProgressValue: Number(poSummaryRow.progressValue ?? 0),
+        poProgressProfit: Number(poSummaryRow.progressProfit ?? 0),
+        poCancelledCount: Number(poSummaryRow.cancelledOrders ?? 0),
+        poCancelledTotal: Number(poSummaryRow.cancelledValue ?? 0),
         poTotalValue: Number(poSummaryRow.totalValue ?? 0),
         bookkeepingCount: Number(bookkeepingSummaryRow.totalEntries ?? 0),
         bookkeepingTotal: Number(bookkeepingSummaryRow.totalAmount ?? 0),
@@ -782,7 +866,29 @@ export default function DashboardScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
+  useEffect(() => {
+    if (isIOS) return undefined;
+    if (!detailModal.visible) {
+      setDetailKeyboardInset(0);
+      return undefined;
+    }
+    const showSub = Keyboard.addListener("keyboardDidShow", event => {
+      const height = event?.endCoordinates?.height ?? 0;
+      const adjusted = Math.max(0, height - insets.bottom);
+      setDetailKeyboardInset(adjusted);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setDetailKeyboardInset(0);
+    });
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+      setDetailKeyboardInset(0);
+    };
+  }, [detailModal.visible, insets.bottom, isIOS]);
+
   function closeDetail() {
+    detailSearchInputRef.current?.blur();
     setDetailModal({ visible: false, title: "", description: "", rows: [], type: null });
     setDetailSearch("");
     setDetailSearchInput("");
@@ -795,6 +901,7 @@ export default function DashboardScreen({ navigation }) {
   function openPaginatedDetail(type) {
     const config = PAGINATED_CONFIG[type];
     if (!config) return;
+    detailSearchInputRef.current?.blur();
     setDetailModal({
       visible: true,
       type,
@@ -867,6 +974,7 @@ export default function DashboardScreen({ navigation }) {
   }
 
   function applySearch() {
+    detailSearchInputRef.current?.blur();
     if (!isPaginatedType(detailModal.type)) return;
     const term = detailSearchInput.trim();
     const normalized = term.toLowerCase();
@@ -875,7 +983,195 @@ export default function DashboardScreen({ navigation }) {
     loadDetailPaginated({ type: detailModal.type, searchTerm: term, reset: true });
   }
 
+  function renderDetailModalBody() {
+    const ModalContainer = isIOS ? KeyboardAvoidingView : View;
+    const modalProps = isIOS
+      ? { behavior: KEYBOARD_AVOIDING_BEHAVIOR, keyboardVerticalOffset: modalKeyboardOffset }
+      : {};
+    const containerStyle = {
+      flex: 1,
+      justifyContent: "flex-end",
+      marginBottom: isIOS ? 0 : detailKeyboardInset,
+    };
+    return (
+      <ModalContainer {...modalProps} style={containerStyle} pointerEvents="box-none">
+        <Pressable
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 24,
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 24,
+            maxHeight: "75%",
+          }}
+          onPress={event => event.stopPropagation()}
+        >
+          <View style={{ alignItems: "center", marginBottom: 12 }}>
+            <View style={{ width: 42, height: 4, borderRadius: 999, backgroundColor: "#E2E8F0" }} />
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: detailModal.description ? 8 : 16,
+            }}
+          >
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A", flex: 1, paddingRight: 12 }}>{detailModal.title}</Text>
+            <TouchableOpacity onPress={closeDetail} style={{ padding: 6 }}>
+              <Ionicons name="close" size={22} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+          {detailModal.description ? <Text style={{ color: "#64748B", marginBottom: 16 }}>{detailModal.description}</Text> : null}
+          {isPaginatedType(detailModal.type) ? (
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  ref={detailSearchInputRef}
+                  value={detailSearchInput}
+                  onChangeText={setDetailSearchInput}
+                  placeholder="Cari..."
+                  placeholderTextColor="#94A3B8"
+                  onSubmitEditing={applySearch}
+                  returnKeyType="search"
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#F8FAFC",
+                    borderWidth: 1,
+                    borderColor: "#E2E8F0",
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    height: 42,
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={applySearch}
+                  style={{ backgroundColor: "#2563EB", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }}
+                >
+                  <Ionicons name="search" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+              {detailLoading ? (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <ActivityIndicator color="#2563EB" />
+                  <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat data…</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={detailModal.rows}
+                  keyExtractor={(item, index) => (item.key ? String(item.key) : `${detailModal.type || "row"}-${index}`)}
+                  renderItem={({ item, index }) => {
+                    const isPressable =
+                      item?.entityType === "item" ||
+                      item?.entityType === "po" ||
+                      item?.entityType === "bookkeeping";
+                    return (
+                      <TouchableOpacity
+                        onPress={isPressable ? () => handleDetailRowPress(item) : undefined}
+                        disabled={!isPressable}
+                        activeOpacity={isPressable ? 0.7 : 1}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          paddingVertical: 12,
+                          borderTopWidth: index === 0 ? 0 : 1,
+                          borderColor: "#E2E8F0",
+                        }}
+                      >
+                        <View style={{ flex: 1, paddingRight: 12, marginBottom: 8 }}>
+                          <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.title}</Text>
+                          {item.subtitle ? (
+                            <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{item.subtitle}</Text>
+                          ) : null}
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          {item.trailingPrimary ? (
+                            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{item.trailingPrimary}</Text>
+                          ) : null}
+                          {item.trailingSecondary ? (
+                            <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{item.trailingSecondary}</Text>
+                          ) : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                  onEndReached={loadMoreDetail}
+                  onEndReachedThreshold={0.6}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: detailHasMore ? 24 : 0 }}
+                  style={{ maxHeight: 320 }}
+                  keyboardShouldPersistTaps="handled"
+                  ListFooterComponent={
+                    detailLoadingMore ? (
+                      <View style={{ paddingVertical: 16, alignItems: "center" }}>
+                        <ActivityIndicator color="#2563EB" />
+                      </View>
+                    ) : null
+                  }
+                  ListEmptyComponent={
+                    <View style={{ paddingVertical: 24 }}>
+                      <Text style={{ color: "#94A3B8", textAlign: "center" }}>Belum ada data untuk ditampilkan.</Text>
+                    </View>
+                  }
+                />
+              )}
+            </>
+          ) : detailLoading ? (
+            <View style={{ alignItems: "center", paddingVertical: 24 }}>
+              <ActivityIndicator color="#2563EB" />
+              <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat data…</Text>
+            </View>
+          ) : detailModal.rows.length ? (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {detailModal.rows.map((row, index) => {
+                const isPressable =
+                  row?.entityType === "item" ||
+                  row?.entityType === "po" ||
+                  row?.entityType === "bookkeeping";
+                return (
+                  <TouchableOpacity
+                    key={row.key ?? `${row.title}-${index}`}
+                    onPress={isPressable ? () => handleDetailRowPress(row) : undefined}
+                    disabled={!isPressable}
+                    activeOpacity={isPressable ? 0.7 : 1}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      paddingVertical: 12,
+                      borderTopWidth: index === 0 ? 0 : 1,
+                      borderColor: "#E2E8F0",
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={{ color: "#0F172A", fontWeight: "600" }}>{row.title}</Text>
+                      {row.subtitle ? (
+                        <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{row.subtitle}</Text>
+                      ) : null}
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      {row.trailingPrimary ? (
+                        <Text style={{ color: "#0F172A", fontWeight: "700" }}>{row.trailingPrimary}</Text>
+                      ) : null}
+                      {row.trailingSecondary ? (
+                        <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{row.trailingSecondary}</Text>
+                      ) : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={{ paddingVertical: 24 }}>
+              <Text style={{ color: "#94A3B8", textAlign: "center" }}>Belum ada data untuk ditampilkan.</Text>
+            </View>
+          )}
+        </Pressable>
+      </ModalContainer>
+    );
+  }
+
   async function handleDetailRowPress(row) {
+    Keyboard.dismiss();
     if (!row || !row.entityType) return;
     if (row.entityType === "item") {
       const itemId = Number(row.entityId);
@@ -891,7 +1187,7 @@ export default function DashboardScreen({ navigation }) {
         }
         const itemRow = res.rows.item(0);
         closeDetail();
-        navigation.navigate("ItemDetail", {
+        navigateToRoot("ItemDetail", {
           itemId: itemRow.id,
           initialItem: {
             id: itemRow.id,
@@ -900,7 +1196,6 @@ export default function DashboardScreen({ navigation }) {
             price: Number(itemRow.price ?? 0),
             stock: Number(itemRow.stock ?? 0),
           },
-          onDone: load,
         });
       } catch (error) {
         console.log("ITEM DETAIL OPEN ERROR:", error);
@@ -910,17 +1205,15 @@ export default function DashboardScreen({ navigation }) {
       const orderId = Number(row.entityId);
       if (!Number.isFinite(orderId)) return;
       closeDetail();
-      navigation.navigate("PurchaseOrderDetail", {
+      navigateToRoot("PurchaseOrderDetail", {
         orderId,
-        onDone: load,
       });
     } else if (row.entityType === "bookkeeping") {
       const entryId = Number(row.entityId);
       if (!Number.isFinite(entryId)) return;
       closeDetail();
-      navigation.navigate("BookkeepingDetail", {
+      navigateToRoot("BookkeepingDetail", {
         entryId,
-        onDone: load,
       });
     }
   }
@@ -933,7 +1226,10 @@ export default function DashboardScreen({ navigation }) {
       poCount: "poFull",
       poProgress: "poProgress",
       poPending: "poProgress",
+      poProgressValue: "poProgress",
       poValue: "poValue",
+      poProgressProfit: "poProgress",
+      poCancelled: "poCancelled",
       bookkeepingCount: "bookkeepingFull",
       bookkeepingTotal: "bookkeepingFull",
       itemProfitTotal: "itemProfit",
@@ -1344,6 +1640,27 @@ export default function DashboardScreen({ navigation }) {
       backgroundColor: "#FEF3C7",
     },
     {
+      key: "poProgressValue",
+      label: "Nilai Progress",
+      value: formatCurrency(metrics.poProgressValue),
+      helper: "Estimasi belanja",
+      icon: "cash-outline",
+      iconColor: "#0EA5E9",
+      backgroundColor: "#E0F2FE",
+    },
+    {
+      key: "poProgressProfit",
+      label: "Estimasi Profit PO",
+      value:
+        metrics.poProgressProfit >= 0
+          ? formatCurrency(metrics.poProgressProfit)
+          : `- ${formatCurrency(Math.abs(metrics.poProgressProfit))}`,
+      helper: "Status progress",
+      icon: "stats-chart-outline",
+      iconColor: "#0EA5E9",
+      backgroundColor: "#E0F2FE",
+    },
+    {
       key: "poValue",
       label: "Nilai PO",
       value: formatCurrency(metrics.poTotalValue),
@@ -1351,6 +1668,15 @@ export default function DashboardScreen({ navigation }) {
       icon: "document-text-outline",
       iconColor: "#A855F7",
       backgroundColor: "#F5E8FF",
+    },
+    {
+      key: "poCancelled",
+      label: "PO Cancelled",
+      value: formatCurrency(metrics.poCancelledTotal),
+      helper: `${formatNumber(metrics.poCancelledCount)} dibatalkan`,
+      icon: "close-circle-outline",
+      iconColor: "#EF4444",
+      backgroundColor: "#FEE2E2",
     },
     {
       key: "itemProfitTotal",
@@ -1810,10 +2136,9 @@ export default function DashboardScreen({ navigation }) {
               key={entry.id}
               activeOpacity={0.85}
               onPress={() =>
-                navigation.navigate("BookkeepingDetail", {
+                navigateToRoot("BookkeepingDetail", {
                   entryId: entry.id,
                   initialEntry: entry,
-                  onDone: load,
                 })
               }
               style={{
@@ -2172,6 +2497,21 @@ export default function DashboardScreen({ navigation }) {
               <Ionicons name="refresh" color="#fff" size={18} style={{ marginRight: 8 }} />
               <Text style={{ color: "#fff", fontWeight: "600" }}>Perbarui Data</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("DataManagement")}
+              style={{
+                marginTop: 12,
+                backgroundColor: "rgba(255,255,255,0.15)",
+                borderRadius: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                paddingVertical: 12,
+              }}
+            >
+              <Ionicons name="cloud-download-outline" color="#fff" size={18} style={{ marginRight: 8 }} />
+              <Text style={{ color: "#fff", fontWeight: "600" }}>Backup & Restore</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
@@ -2241,181 +2581,7 @@ export default function DashboardScreen({ navigation }) {
       </ScrollView>
       <Modal visible={detailModal.visible} transparent animationType="fade" onRequestClose={closeDetail} statusBarTranslucent>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", padding: 16 }} onPress={closeDetail}>
-          <KeyboardAvoidingView
-            behavior={KEYBOARD_AVOIDING_BEHAVIOR}
-            keyboardVerticalOffset={modalKeyboardOffset}
-            style={{ flex: 1, justifyContent: "flex-end" }}
-            pointerEvents="box-none"
-          >
-            <Pressable
-              style={{
-                backgroundColor: "#fff",
-                borderRadius: 24,
-                paddingHorizontal: 20,
-                paddingTop: 12,
-                paddingBottom: 24,
-                maxHeight: "75%",
-              }}
-              onPress={event => event.stopPropagation()}
-            >
-              <View style={{ alignItems: "center", marginBottom: 12 }}>
-                <View style={{ width: 42, height: 4, borderRadius: 999, backgroundColor: "#E2E8F0" }} />
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: detailModal.description ? 8 : 16,
-                }}
-              >
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A", flex: 1, paddingRight: 12 }}>{detailModal.title}</Text>
-                <TouchableOpacity onPress={closeDetail} style={{ padding: 6 }}>
-                  <Ionicons name="close" size={22} color="#0F172A" />
-                </TouchableOpacity>
-              </View>
-              {detailModal.description ? <Text style={{ color: "#64748B", marginBottom: 16 }}>{detailModal.description}</Text> : null}
-              {isPaginatedType(detailModal.type) ? (
-                <>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <TextInput
-                      value={detailSearchInput}
-                      onChangeText={setDetailSearchInput}
-                      placeholder="Cari..."
-                      placeholderTextColor="#94A3B8"
-                      onSubmitEditing={applySearch}
-                      style={{
-                        flex: 1,
-                        backgroundColor: "#F8FAFC",
-                        borderWidth: 1,
-                        borderColor: "#E2E8F0",
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        height: 42,
-                      }}
-                    />
-                    <TouchableOpacity
-                      onPress={applySearch}
-                      style={{ backgroundColor: "#2563EB", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }}
-                    >
-                      <Ionicons name="search" size={18} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                  {detailLoading ? (
-                    <View style={{ alignItems: "center", paddingVertical: 24 }}>
-                      <ActivityIndicator color="#2563EB" />
-                      <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat data…</Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={detailModal.rows}
-                      keyExtractor={(item, index) => (item.key ? String(item.key) : `${detailModal.type || "row"}-${index}`)}
-                      renderItem={({ item, index }) => {
-                        const isPressable =
-                          item?.entityType === "item" ||
-                          item?.entityType === "po" ||
-                          item?.entityType === "bookkeeping";
-                        return (
-                          <TouchableOpacity
-                            onPress={isPressable ? () => handleDetailRowPress(item) : undefined}
-                            disabled={!isPressable}
-                            activeOpacity={isPressable ? 0.7 : 1}
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "flex-start",
-                              paddingVertical: 12,
-                              borderTopWidth: index === 0 ? 0 : 1,
-                              borderColor: "#E2E8F0",
-                            }}
-                          >
-                            <View style={{ flex: 1, paddingRight: 12, marginBottom: 8 }}>
-                              <Text style={{ color: "#0F172A", fontWeight: "600" }}>{item.title}</Text>
-                              {item.subtitle ? (
-                                <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{item.subtitle}</Text>
-                              ) : null}
-                            </View>
-                            <View style={{ alignItems: "flex-end" }}>
-                              {item.trailingPrimary ? (
-                                <Text style={{ color: "#0F172A", fontWeight: "700" }}>{item.trailingPrimary}</Text>
-                              ) : null}
-                              {item.trailingSecondary ? (
-                                <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{item.trailingSecondary}</Text>
-                              ) : null}
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      }}
-                      onEndReached={loadMoreDetail}
-                      onEndReachedThreshold={0.6}
-                      showsVerticalScrollIndicator={false}
-                      contentContainerStyle={{ paddingBottom: detailHasMore ? 24 : 0 }}
-                      style={{ maxHeight: 320 }}
-                      ListFooterComponent={
-                        detailLoadingMore ? (
-                          <View style={{ paddingVertical: 16, alignItems: "center" }}>
-                            <ActivityIndicator color="#2563EB" />
-                          </View>
-                        ) : null
-                      }
-                      ListEmptyComponent={
-                        <View style={{ paddingVertical: 24 }}>
-                          <Text style={{ color: "#94A3B8", textAlign: "center" }}>Belum ada data untuk ditampilkan.</Text>
-                        </View>
-                      }
-                    />
-                  )}
-                </>
-              ) : detailLoading ? (
-                <View style={{ alignItems: "center", paddingVertical: 24 }}>
-                  <ActivityIndicator color="#2563EB" />
-                  <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat data…</Text>
-                </View>
-              ) : detailModal.rows.length ? (
-                <ScrollView showsVerticalScrollIndicator={false}>
-                  {detailModal.rows.map((row, index) => {
-                    const isPressable =
-                      row?.entityType === "item" ||
-                      row?.entityType === "po" ||
-                      row?.entityType === "bookkeeping";
-                    return (
-                      <TouchableOpacity
-                        key={row.key ?? `${row.title}-${index}`}
-                        onPress={isPressable ? () => handleDetailRowPress(row) : undefined}
-                        disabled={!isPressable}
-                        activeOpacity={isPressable ? 0.7 : 1}
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "flex-start",
-                          paddingVertical: 12,
-                          borderTopWidth: index === 0 ? 0 : 1,
-                          borderColor: "#E2E8F0",
-                        }}
-                      >
-                        <View style={{ flex: 1, paddingRight: 12 }}>
-                          <Text style={{ color: "#0F172A", fontWeight: "600" }}>{row.title}</Text>
-                          {row.subtitle ? (
-                            <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{row.subtitle}</Text>
-                          ) : null}
-                        </View>
-                        <View style={{ alignItems: "flex-end" }}>
-                          {row.trailingPrimary ? (
-                            <Text style={{ color: "#0F172A", fontWeight: "700" }}>{row.trailingPrimary}</Text>
-                          ) : null}
-                          {row.trailingSecondary ? (
-                            <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{row.trailingSecondary}</Text>
-                          ) : null}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              ) : (
-                <View style={{ paddingVertical: 24 }}>
-                  <Text style={{ color: "#94A3B8", textAlign: "center" }}>Belum ada data untuk ditampilkan.</Text>
-                </View>
-              )}
-            </Pressable>
-          </KeyboardAvoidingView>
+          {renderDetailModalBody()}
         </Pressable>
       </Modal>
     </SafeAreaView>
