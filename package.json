@@ -1,6 +1,6 @@
 {
   "name": "gudang-app",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {
@@ -17,6 +17,7 @@
     "@react-navigation/native-stack": "^6.9.26",
     "expo": "^54.0.10",
     "expo-print": "~15.0.7",
+    "expo-document-picker": "~14.0.7",
     "expo-sharing": "~14.0.7",
     "expo-sqlite": "~16.0.8",
     "react": "19.1.0",

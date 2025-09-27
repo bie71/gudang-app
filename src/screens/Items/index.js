@@ -24,6 +24,7 @@ import Input from "../../components/Input";
 import DatePickerField from "../../components/DatePickerField";
 import { exec } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
+import { exportItemsCsv } from "../../services/export";
 import {
   formatCurrencyValue,
   formatDateDisplay,
@@ -71,6 +72,7 @@ export function ItemsScreen({ navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -441,55 +443,103 @@ export function ItemsScreen({ navigation }) {
     }
   }, [reportModalState, reportGenerating]);
 
+  const handleExportCsv = useCallback(async () => {
+    if (csvExporting) return;
+    setCsvExporting(true);
+    try {
+      const result = await exportItemsCsv();
+      if (result.shareUri) {
+        await Sharing.shareAsync(result.shareUri, {
+          mimeType: "text/csv",
+          dialogTitle: "Bagikan CSV Barang",
+        });
+      }
+      const locationMessage = result.displayPath
+        ? `File tersimpan di ${result.displayPath}.`
+        : result.location === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${result.uri}.`;
+      const alertMessage = result.notice ? `${result.notice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Berhasil", alertMessage);
+    } catch (error) {
+      console.log("EXPORT ITEMS CSV ERROR:", error);
+      Alert.alert("Gagal", "CSV tidak dapat dibuat saat ini.");
+    } finally {
+      setCsvExporting(false);
+    }
+  }, [csvExporting]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <View style={{ padding: 16, flex: 1 }}>
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+        <View style={{ marginBottom: 12 }}>
           <TextInput
             placeholder="Cari nama/kategori…"
             value={searchTerm}
             onChangeText={setSearchTerm}
             style={{
-              flex: 1,
               backgroundColor: "#fff",
               borderWidth: 1,
               borderColor: "#E5E7EB",
               borderRadius: 12,
               paddingHorizontal: 12,
               height: 44,
+              marginBottom: 10,
             }}
           />
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("AddItem", {
-                onDone: () => loadItems({ search: searchTerm, reset: true }),
-              })
-            }
-            style={{
-              backgroundColor: "#10B981",
-              paddingHorizontal: 16,
-              borderRadius: 12,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>+ Barang</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={openReportModal}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: "#2563EB",
-              paddingHorizontal: 14,
-              borderRadius: 12,
-              gap: 6,
-            }}
-          >
-            <Ionicons name="document-text-outline" size={18} color="#fff" />
-            <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("AddItem", {
+                  onDone: () => loadItems({ search: searchTerm, reset: true }),
+                })
+              }
+              style={{
+                flex: 1,
+                backgroundColor: "#10B981",
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                alignItems: "center",
+                justifyContent: "center",
+                height: 44,
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>+ Barang</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={openReportModal}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#2563EB",
+                paddingHorizontal: 14,
+                borderRadius: 12,
+                gap: 6,
+                height: 44,
+              }}
+            >
+              <Ionicons name="document-text-outline" size={18} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={csvExporting}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
+                paddingHorizontal: 14,
+                borderRadius: 12,
+                gap: 6,
+                height: 44,
+              }}
+            >
+              {csvExporting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
+              <Text style={{ color: "#fff", fontWeight: "700" }}>CSV</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <FlatList
           data={items}

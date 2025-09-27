@@ -25,6 +25,7 @@ import IconActionButton from "../../components/IconActionButton";
 import DetailRow from "../../components/DetailRow";
 import { exec } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
+import { exportPurchaseOrdersCsv } from "../../services/export";
 import {
   buildPOFileBase,
   buildPurchaseOrdersReportFileBase,
@@ -146,6 +147,7 @@ export function PurchaseOrdersScreen({ navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
@@ -586,6 +588,32 @@ export function PurchaseOrdersScreen({ navigation }) {
     }
   }, [reportModalState, reportGenerating]);
 
+  const handleExportCsv = useCallback(async () => {
+    if (csvExporting) return;
+    setCsvExporting(true);
+    try {
+      const result = await exportPurchaseOrdersCsv();
+      if (result.shareUri) {
+        await Sharing.shareAsync(result.shareUri, {
+          mimeType: "text/csv",
+          dialogTitle: "Bagikan CSV Purchase Order",
+        });
+      }
+      const locationMessage = result.displayPath
+        ? `File tersimpan di ${result.displayPath}.`
+        : result.location === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${result.uri}.`;
+      const alertMessage = result.notice ? `${result.notice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Berhasil", alertMessage);
+    } catch (error) {
+      console.log("EXPORT PURCHASE ORDERS CSV ERROR:", error);
+      Alert.alert("Gagal", "CSV purchase order tidak dapat dibuat saat ini.");
+    } finally {
+      setCsvExporting(false);
+    }
+  }, [csvExporting]);
+
   const renderItem = ({ item }) => {
     const statusStyle = getPOStatusStyle(item.status);
     const totalValue = item.totalValue ?? 0;
@@ -667,6 +695,23 @@ export function PurchaseOrdersScreen({ navigation }) {
             >
               <Ionicons name="document-text-outline" size={18} color="#fff" />
               <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={csvExporting}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 12,
+                gap: 6,
+              }}
+            >
+              {csvExporting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
+              <Text style={{ color: "#fff", fontWeight: "700" }}>CSV</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() =>

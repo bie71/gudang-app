@@ -8,7 +8,8 @@ import {
   EditPurchaseOrderScreen,
   PurchaseOrderDetailScreen,
 } from "../screens/purchaseOrders";
-import { AddBookkeepingScreen, BookkeepingDetailScreen } from "../screens/bookkeeping";
+import { AddBookkeepingScreen, BookkeepingDetailScreen, BookkeepingHistoryScreen } from "../screens/bookkeeping";
+import DataManagementScreen from "../screens/DataManagementScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -31,6 +32,16 @@ export default function RootNavigator() {
         name="AddBookkeeping"
         component={AddBookkeepingScreen}
         options={{ title: "Tambah Pembukuan" }}
+      />
+      <Stack.Screen
+        name="BookkeepingHistory"
+        component={BookkeepingHistoryScreen}
+        options={{ title: "Riwayat Pembukuan" }}
+      />
+      <Stack.Screen
+        name="DataManagement"
+        component={DataManagementScreen}
+        options={{ title: "Manajemen Data" }}
       />
     </Stack.Navigator>
   );

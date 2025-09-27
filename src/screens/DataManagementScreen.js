@@ -1,0 +1,216 @@
+import React, { useCallback, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+
+import { exportDatabaseBackup, importDatabaseBackup } from "../services/backup";
+import { exportAllDataCsv } from "../services/export";
+
+export default function DataManagementScreen({ navigation }) {
+  const [csvExporting, setCsvExporting] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const handleExportAllCsv = useCallback(async () => {
+    if (csvExporting) return;
+    setCsvExporting(true);
+    try {
+      const results = await exportAllDataCsv();
+      const successList = results
+        .filter(item => item.success)
+        .map(item => `• ${item.label} → ${item.displayPath || item.uri || "tersimpan"}`);
+      const failedList = results.filter(item => !item.success).map(item => `• ${item.label}`);
+      const messageParts = [];
+      if (successList.length) {
+        messageParts.push(`Berhasil:\n${successList.join("\n")}`);
+      }
+      if (failedList.length) {
+        messageParts.push(`Gagal:\n${failedList.join("\n")}`);
+      }
+      Alert.alert("Ekspor CSV", messageParts.join("\n\n") || "Proses selesai.");
+    } catch (error) {
+      console.log("EXPORT ALL CSV ERROR:", error);
+      Alert.alert("Gagal", "Tidak dapat mengekspor CSV saat ini.");
+    } finally {
+      setCsvExporting(false);
+    }
+  }, [csvExporting]);
+
+  const handleBackup = useCallback(async () => {
+    if (backingUp) return;
+    setBackingUp(true);
+    try {
+      const result = await exportDatabaseBackup();
+      const locationMessage = result.displayPath
+        ? `File tersimpan di ${result.displayPath}.`
+        : result.location === "external"
+        ? "File tersimpan di folder yang kamu pilih."
+        : `File tersimpan di ${result.uri}.`;
+      const alertMessage = result.notice ? `${result.notice}\n\n${locationMessage}` : locationMessage;
+      Alert.alert("Backup Dibuat", alertMessage);
+    } catch (error) {
+      console.log("EXPORT BACKUP ERROR:", error);
+      Alert.alert("Gagal", "Backup tidak dapat dibuat saat ini.");
+    } finally {
+      setBackingUp(false);
+    }
+  }, [backingUp]);
+
+  const executeRestore = useCallback(
+    async fileUri => {
+      setRestoring(true);
+      try {
+        await importDatabaseBackup(fileUri);
+        Alert.alert(
+          "Berhasil",
+          "Data berhasil dipulihkan. Buka ulang aplikasi untuk memastikan perubahan diterapkan.",
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.navigate("Tabs", { screen: "Dashboard" }),
+            },
+          ],
+        );
+      } catch (error) {
+        console.log("IMPORT BACKUP ERROR:", error);
+        Alert.alert("Gagal", error?.message || "Backup tidak dapat dipulihkan.");
+      } finally {
+        setRestoring(false);
+      }
+    },
+    [navigation],
+  );
+
+  const handleRestore = useCallback(async () => {
+    if (restoring) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        multiple: false,
+        type: ["application/json", "application/octet-stream", "text/*"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert("Gagal", "File tidak valid.");
+        return;
+      }
+      Alert.alert(
+        "Pulihkan Data?",
+        "Seluruh data saat ini akan diganti dengan data dari backup. Pastikan kamu sudah membuat backup terbaru sebelum melanjutkan.",
+        [
+          { text: "Batal", style: "cancel" },
+          {
+            text: "Pulihkan",
+            style: "destructive",
+            onPress: () => executeRestore(asset.uri),
+          },
+        ],
+      );
+    } catch (error) {
+      console.log("DOCUMENT PICKER ERROR:", error);
+      Alert.alert("Gagal", "Tidak dapat memilih file backup.");
+    }
+  }, [executeRestore, restoring]);
+
+  const Button = ({ icon, label, subtitle, color, loading, onPress, disabled }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 18,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 12,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            backgroundColor: color,
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 14,
+          }}
+        >
+          <Ionicons name={icon} size={22} color="#fff" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>{label}</Text>
+          {subtitle ? <Text style={{ color: "#64748B", marginTop: 4 }}>{subtitle}</Text> : null}
+        </View>
+      </View>
+      {loading ? <ActivityIndicator color="#2563EB" /> : <Ionicons name="chevron-forward" size={20} color="#94A3B8" />}
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 6 }}>Manajemen Data</Text>
+        <Text style={{ color: "#64748B", marginBottom: 20 }}>
+          Ekspor CSV per modul, lakukan backup penuh, atau pulihkan data dari cadangan.
+        </Text>
+
+        <Button
+          icon="document-outline"
+          label="Ekspor Semua CSV"
+          subtitle="Menyimpan CSV untuk barang, riwayat stok, purchase order, dan pembukuan."
+          color="#2563EB"
+          onPress={handleExportAllCsv}
+          loading={csvExporting}
+          disabled={backingUp || restoring}
+        />
+
+        <Button
+          icon="cloud-download-outline"
+          label="Backup Database"
+          subtitle="Simpan seluruh data dalam satu file backup JSON."
+          color="#0EA5E9"
+          onPress={handleBackup}
+          loading={backingUp}
+          disabled={csvExporting || restoring}
+        />
+
+        <Button
+          icon="cloud-upload-outline"
+          label="Pulihkan dari Backup"
+          subtitle="Ganti data aplikasi dengan file backup yang dipilih."
+          color="#F97316"
+          onPress={handleRestore}
+          loading={restoring}
+          disabled={csvExporting || backingUp}
+        />
+
+        <View style={{ marginTop: 24, backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#E2E8F0" }}>
+          <Text style={{ fontWeight: "700", color: "#0F172A", marginBottom: 8 }}>Tips</Text>
+          <Text style={{ color: "#64748B", marginBottom: 6 }}>
+            • Lakukan backup sebelum mengganti perangkat atau melakukan restore.
+          </Text>
+          <Text style={{ color: "#64748B", marginBottom: 6 }}>
+            • Simpan file backup di cloud storage pribadi agar mudah dipindahkan ke perangkat lain.
+          </Text>
+          <Text style={{ color: "#64748B" }}>
+            • Setelah restore selesai, buka ulang aplikasi agar seluruh tab memuat data terbaru.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
