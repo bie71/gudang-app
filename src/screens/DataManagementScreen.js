@@ -3,6 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import { makeRedirectUri } from 'expo-auth-session';
 
 import * as Google from "expo-auth-session/providers/google";
 import Constants from "expo-constants";
@@ -55,13 +56,22 @@ export default function DataManagementScreen({ navigation }) {
     [googleConfig],
   );
 
+  const ANDROID_ID_BASE = googleConfig.androidClientId.replace('.apps.googleusercontent.com', '');
+  const GOOGLE_NATIVE_REDIRECT = `com.googleusercontent.apps.${ANDROID_ID_BASE}:/oauth2redirect/google`;
+
   const [request, , promptAsync] = Google.useAuthRequest({
     androidClientId: googleConfig.androidClientId,
     // iosClientId: googleConfig.iosClientId,
     // expoClientId: googleConfig.expoClientId,
     // webClientId: googleConfig.webClientId,
     scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file"],
+    redirectUri: makeRedirectUri({ native: GOOGLE_NATIVE_REDIRECT }),
   });
+
+useEffect(() => {
+  console.log('AuthRequest redirectUri:', request?.redirectUri); 
+  // Expected: com.googleusercontent.apps.<ID>:/oauth2redirect/google
+}, [request]);
 
   useEffect(() => {
     (async () => {

@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.company.gudang",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
@@ -25,7 +25,7 @@
           "category": ["BROWSABLE", "DEFAULT"],
           "data": [
             {
-              "scheme": "com.googleusercontent.apps.82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of.apps.googleusercontent.com",
+              "scheme": "com.googleusercontent.apps.82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of",
               "host": "oauth2redirect",
               "pathPrefix": "/google"
             }
