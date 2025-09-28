@@ -129,6 +129,7 @@ export default function DataManagementScreen({ navigation }) {
       // const useProxy = Constants?.executionEnvironment === "storeClient";
       // const result = await promptAsync({ useProxy, showInRecents: true });
       const result = await promptAsync({  showInRecents: true });
+      console.log("GOOGLE DRIVE LOGIN result:", result);
       if (result?.type === "success" && result.authentication?.accessToken) {
         const expiresIn = result.authentication.expiresIn ?? 3600;
         const saved = await saveDriveToken({
