@@ -16,7 +16,8 @@ import {
   saveDriveToken,
   uploadBackupToDrive,
 } from "../services/googleDrive";
-
+import * as WebBrowser from 'expo-web-browser';
+WebBrowser.maybeCompleteAuthSession();
 
 export default function DataManagementScreen({ navigation }) {
   const [csvExporting, setCsvExporting] = useState(false);
@@ -35,10 +36,10 @@ export default function DataManagementScreen({ navigation }) {
 
   const googleConfig = useMemo(
     () => ({
-      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_EXPO || extraClients.expo,
+      // expoClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_EXPO || extraClients.expo,
       androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || extraClients.android,
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || extraClients.ios,
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || extraClients.web,
+      // iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || extraClients.ios,
+      // webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || extraClients.web,
     }),
     [extraClients],
   );
@@ -56,9 +57,9 @@ export default function DataManagementScreen({ navigation }) {
 
   const [request, , promptAsync] = Google.useAuthRequest({
     androidClientId: googleConfig.androidClientId,
-    iosClientId: googleConfig.iosClientId,
-    expoClientId: googleConfig.expoClientId,
-    webClientId: googleConfig.webClientId,
+    // iosClientId: googleConfig.iosClientId,
+    // expoClientId: googleConfig.expoClientId,
+    // webClientId: googleConfig.webClientId,
     scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file"],
   });
 
@@ -125,8 +126,9 @@ export default function DataManagementScreen({ navigation }) {
     }
     try {
       setAuthLoading(true);
-      const useProxy = Constants?.executionEnvironment === "storeClient";
-      const result = await promptAsync({ useProxy, showInRecents: true });
+      // const useProxy = Constants?.executionEnvironment === "storeClient";
+      // const result = await promptAsync({ useProxy, showInRecents: true });
+      const result = await promptAsync({  showInRecents: true });
       if (result?.type === "success" && result.authentication?.accessToken) {
         const expiresIn = result.authentication.expiresIn ?? 3600;
         const saved = await saveDriveToken({
