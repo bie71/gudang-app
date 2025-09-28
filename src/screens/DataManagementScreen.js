@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import { makeRedirectUri } from 'expo-auth-session';
+import * as AuthSession from "expo-auth-session";
 
 import * as Google from "expo-auth-session/providers/google";
 import Constants from "expo-constants";
@@ -14,10 +14,11 @@ import {
   clearDriveToken,
   getStoredDriveToken,
   isDriveTokenValid,
+  refreshDriveAccessToken,
   saveDriveToken,
   uploadBackupToDrive,
 } from "../services/googleDrive";
-import * as WebBrowser from 'expo-web-browser';
+import * as WebBrowser from "expo-web-browser";
 WebBrowser.maybeCompleteAuthSession();
 
 export default function DataManagementScreen({ navigation }) {
@@ -56,22 +57,103 @@ export default function DataManagementScreen({ navigation }) {
     [googleConfig],
   );
 
-  const ANDROID_ID_BASE = googleConfig.androidClientId.replace('.apps.googleusercontent.com', '');
-  const GOOGLE_NATIVE_REDIRECT = `com.googleusercontent.apps.${ANDROID_ID_BASE}:/oauth2redirect/google`;
+  const androidClientId = googleConfig.androidClientId;
 
-  const [request, , promptAsync] = Google.useAuthRequest({
-    androidClientId: googleConfig.androidClientId,
+  const nativeRedirectUri = useMemo(() => {
+    if (!androidClientId) return undefined;
+    const androidIdBase = androidClientId.replace(".apps.googleusercontent.com", "");
+    return `com.googleusercontent.apps.${androidIdBase}:/oauth2redirect/google`;
+  }, [androidClientId]);
+
+  const redirectUri = useMemo(
+    () => AuthSession.makeRedirectUri({ native: nativeRedirectUri }),
+    [nativeRedirectUri],
+  );
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId,
     // iosClientId: googleConfig.iosClientId,
     // expoClientId: googleConfig.expoClientId,
     // webClientId: googleConfig.webClientId,
     scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file"],
-    redirectUri: makeRedirectUri({ native: GOOGLE_NATIVE_REDIRECT }),
+    redirectUri,
+    shouldAutoExchangeCode: false,
   });
 
-useEffect(() => {
-  console.log('AuthRequest redirectUri:', request?.redirectUri); 
-  // Expected: com.googleusercontent.apps.<ID>:/oauth2redirect/google
-}, [request]);
+  useEffect(() => {
+    console.log("AuthRequest redirectUri:", request?.redirectUri);
+    // Expected: com.googleusercontent.apps.<ID>:/oauth2redirect/google
+  }, [request]);
+
+  useEffect(() => {
+    if (!response) return;
+
+    if (!androidClientId) {
+      setAuthLoading(false);
+      return;
+    }
+
+    if (response.type !== "success") {
+      setAuthLoading(false);
+      return;
+    }
+
+    const code = response.params?.code;
+    const codeVerifier = request?.codeVerifier;
+    const effectiveRedirectUri = request?.redirectUri || redirectUri;
+
+    if (!code || !codeVerifier || !effectiveRedirectUri) {
+      console.log("GOOGLE DRIVE LOGIN missing code or codeVerifier", {
+        hasCode: Boolean(code),
+        hasCodeVerifier: Boolean(codeVerifier),
+        hasRedirectUri: Boolean(effectiveRedirectUri),
+      });
+      setAuthLoading(false);
+      Alert.alert("Gagal", "Tidak dapat melanjutkan login Google Drive. Silakan coba lagi.");
+      return;
+    }
+
+    (async () => {
+      try {
+        console.log("GOOGLE DRIVE CODE EXCHANGE INPUT:", {
+          code: typeof code === "string" ? `${code.slice(0, 6)}...` : null,
+          codeVerifier: typeof codeVerifier === "string" ? `${codeVerifier.slice(0, 6)}...` : null,
+          redirectUri: effectiveRedirectUri,
+        });
+        const tokenResult = await AuthSession.exchangeCodeAsync(
+          {
+            clientId: androidClientId,
+            code,
+            redirectUri: effectiveRedirectUri,
+            extraParams: { code_verifier: codeVerifier },
+          },
+          Google.discovery,
+        );
+
+        console.log("GOOGLE DRIVE TOKEN RESULT:", tokenResult);
+
+        const saved = await saveDriveToken({
+          accessToken: tokenResult.accessToken || tokenResult.rawResponse?.access_token,
+          expiresIn: tokenResult.expiresIn ?? tokenResult.rawResponse?.expires_in,
+          idToken: tokenResult.idToken || tokenResult.rawResponse?.id_token,
+          refreshToken: tokenResult.refreshToken || tokenResult.rawResponse?.refresh_token,
+          scope: tokenResult.scope || tokenResult.rawResponse?.scope,
+          tokenType: tokenResult.tokenType || tokenResult.rawResponse?.token_type,
+        });
+
+        if (saved) {
+          setDriveToken(saved);
+          setInitialTokenLoading(false);
+          Alert.alert("Berhasil", "Google Drive tersambung.");
+        }
+      } catch (error) {
+        console.log("GOOGLE DRIVE CODE EXCHANGE ERROR:", error);
+        Alert.alert("Gagal", "Tidak dapat menyelesaikan login Google Drive.");
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+  }, [androidClientId, redirectUri, request, response]);
 
   useEffect(() => {
     (async () => {
@@ -138,21 +220,14 @@ useEffect(() => {
       setAuthLoading(true);
       // const useProxy = Constants?.executionEnvironment === "storeClient";
       // const result = await promptAsync({ useProxy, showInRecents: true });
-      const result = await promptAsync({  showInRecents: true });
+      const result = await promptAsync({ showInRecents: true });
       console.log("GOOGLE DRIVE LOGIN result:", result);
-      if (result?.type === "success" && result.authentication?.accessToken) {
-        const expiresIn = result.authentication.expiresIn ?? 3600;
-        const saved = await saveDriveToken({
-          accessToken: result.authentication.accessToken,
-          expiresAt: Date.now() + expiresIn * 1000,
-        });
-        setDriveToken(saved);
-        Alert.alert("Berhasil", "Google Drive tersambung.");
+      if (!result || result.type !== "success") {
+        setAuthLoading(false);
       }
     } catch (error) {
       console.log("GOOGLE DRIVE LOGIN ERROR:", error);
       Alert.alert("Gagal", "Tidak dapat login ke Google Drive.");
-    } finally {
       setAuthLoading(false);
     }
   }, [hasGoogleConfig, promptAsync, request]);
@@ -160,33 +235,92 @@ useEffect(() => {
   const handleDriveLogout = useCallback(async () => {
     await clearDriveToken();
     setDriveToken(null);
+    setInitialTokenLoading(false);
     Alert.alert("Selesai", "Google Drive terputus.");
   }, []);
 
   const handleDriveBackup = useCallback(async () => {
     if (driveSyncing) return;
-    if (!driveToken || !isDriveTokenValid(driveToken)) {
-      Alert.alert("Login Diperlukan", "Silakan login Google Drive terlebih dahulu sebelum mengunggah backup.");
-      return;
-    }
     setDriveSyncing(true);
     try {
+      let tokenToUse = driveToken;
+
+      if (!tokenToUse) {
+        Alert.alert("Login Diperlukan", "Silakan login Google Drive terlebih dahulu sebelum mengunggah backup.");
+        return;
+      }
+
+      if (!isDriveTokenValid(tokenToUse)) {
+        if (tokenToUse.refreshToken && androidClientId) {
+          try {
+            tokenToUse = await refreshDriveAccessToken({
+              clientId: androidClientId,
+              refreshToken: tokenToUse.refreshToken,
+            });
+            setDriveToken(tokenToUse);
+          } catch (refreshError) {
+            console.log("GOOGLE DRIVE REFRESH ERROR:", refreshError);
+            await clearDriveToken();
+            setDriveToken(null);
+            Alert.alert(
+              "Token Kedaluwarsa",
+              "Sesi Google Drive berakhir. Silakan login ulang dan coba lagi.",
+            );
+            return;
+          }
+        } else {
+          await clearDriveToken();
+          setDriveToken(null);
+          Alert.alert(
+            "Login Diperlukan",
+            "Sesi Google Drive berakhir. Silakan login ulang sebelum mengunggah backup.",
+          );
+          return;
+        }
+      }
+
+      if (!isDriveTokenValid(tokenToUse)) {
+        await clearDriveToken();
+        setDriveToken(null);
+        Alert.alert("Token Kedaluwarsa", "Sesi Google Drive berakhir. Silakan login ulang dan coba lagi.");
+        return;
+      }
+
       const { fileName, json } = await getBackupJson();
-      await uploadBackupToDrive({ accessToken: driveToken.accessToken, fileName, jsonContent: json });
+      await uploadBackupToDrive({ accessToken: tokenToUse.accessToken, fileName, jsonContent: json });
       Alert.alert("Berhasil", "Backup tersimpan di Google Drive.");
     } catch (error) {
-      console.log("UPLOAD DRIVE ERROR:", error);
+      console.log("UPLOAD DRIVE ERROR:", error, error?.status, error?.body);
+      let alertMessage = error?.message || "Tidak dapat mengunggah backup ke Google Drive.";
+      if (error?.body) {
+        try {
+          const parsedBody = JSON.parse(error.body);
+          const apiMessage = parsedBody?.error?.message || parsedBody?.error_description;
+          if (apiMessage) alertMessage = apiMessage;
+        } catch (parseError) {
+          console.log("GOOGLE DRIVE ERROR BODY PARSE FAILED:", parseError);
+        }
+      }
+
       if (error?.status === 401) {
         await clearDriveToken();
         setDriveToken(null);
         Alert.alert("Token Kedaluwarsa", "Sesi Google Drive berakhir. Silakan login ulang dan coba lagi.");
       } else {
-        Alert.alert("Gagal", error?.message || "Tidak dapat mengunggah backup ke Google Drive.");
+        Alert.alert("Gagal", alertMessage);
       }
     } finally {
       setDriveSyncing(false);
     }
-  }, [driveSyncing, driveToken]);
+  }, [
+    androidClientId,
+    clearDriveToken,
+    driveSyncing,
+    driveToken,
+    getBackupJson,
+    refreshDriveAccessToken,
+    uploadBackupToDrive,
+  ]);
 
   const executeRestore = useCallback(
     async fileUri => {
@@ -285,11 +419,38 @@ useEffect(() => {
     </TouchableOpacity>
   );
 
-  const googleLoggedIn = Boolean(driveToken && isDriveTokenValid(driveToken));
+  const googleLoggedIn = useMemo(() => {
+    if (!driveToken) return false;
+    return Boolean(driveToken.accessToken || driveToken.refreshToken);
+  }, [driveToken]);
+
+  const driveBackupDisabled = useMemo(
+    () => !googleLoggedIn || driveSyncing || authLoading || initialTokenLoading,
+    [googleLoggedIn, driveSyncing, authLoading, initialTokenLoading],
+  );
+
+  useEffect(() => {
+    console.log("GOOGLE DRIVE AUTH STATE:", {
+      googleLoggedIn,
+      hasAccessToken: Boolean(driveToken?.accessToken),
+      hasRefreshToken: Boolean(driveToken?.refreshToken),
+      authLoading,
+      initialTokenLoading,
+      driveSyncing,
+      driveBackupDisabled,
+    });
+  }, [
+    googleLoggedIn,
+    driveToken,
+    authLoading,
+    initialTokenLoading,
+    driveSyncing,
+    driveBackupDisabled,
+  ]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", marginTop: -50}}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, marginTop: 15  }}>
         <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 6 }}>Manajemen Data</Text>
         <Text style={{ color: "#64748B", marginBottom: 20 }}>
           Ekspor CSV per modul, lakukan backup penuh, atau sinkronkan backup ke Google Drive.
@@ -344,7 +505,7 @@ useEffect(() => {
           color="#34A853"
           onPress={handleDriveBackup}
           loading={driveSyncing}
-          disabled={!googleLoggedIn || driveSyncing || authLoading || initialTokenLoading}
+          disabled={driveBackupDisabled}
         />
 
         <View style={{ marginTop: 24, backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#E2E8F0" }}>
@@ -358,9 +519,9 @@ useEffect(() => {
           <Text style={{ color: "#64748B", marginBottom: 6 }}>
             • Setelah restore selesai, buka ulang aplikasi agar seluruh tab memuat data terbaru.
           </Text>
-          <Text style={{ color: "#64748B" }}>
+          {/* <Text style={{ color: "#64748B" }}>
             • Untuk sinkron Google Drive, setel variabel EXPO_PUBLIC_GOOGLE_CLIENT_ID_* lalu login terlebih dahulu.
-          </Text>
+          </Text> */}
         </View>
       </ScrollView>
     </SafeAreaView>
