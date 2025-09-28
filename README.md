@@ -65,6 +65,12 @@ npx expo prebuild --platform android
 # build AAB buat Play Store
 eas build -p android --profile production
 
+# build lokal env
+eas build --local -p android --profile development
+
+adb install -r path/to/app-development.apk   # atau app-preview.apk
+
+
 ```
 
 
