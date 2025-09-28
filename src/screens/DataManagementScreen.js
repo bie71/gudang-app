@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import * as WebBrowser from "expo-web-browser";
+
 import * as Google from "expo-auth-session/providers/google";
 import Constants from "expo-constants";
 
@@ -17,7 +17,6 @@ import {
   uploadBackupToDrive,
 } from "../services/googleDrive";
 
-WebBrowser.maybeCompleteAuthSession();
 
 export default function DataManagementScreen({ navigation }) {
   const [csvExporting, setCsvExporting] = useState(false);

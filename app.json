@@ -3,7 +3,7 @@
     "scheme": "gudangapp",
     "name": "Gudang App",
     "slug": "gudang-app",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -13,11 +13,25 @@
     },
     "android": {
       "package": "com.company.gudang",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+       "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of.apps.googleusercontent.com",
+              "host": "oauth2redirect",
+              "pathPrefix": "/google"
+            }
+          ]
+        }
+      ]
     },
     "plugins": [
       "expo-sqlite",
