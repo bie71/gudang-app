@@ -25,7 +25,7 @@
           "data": [
             {
               "scheme": "com.googleusercontent.apps.82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of",
-              "host": "oauth2redirect",
+              "host": "",
               "pathPrefix": "/google"
             }
           ]
