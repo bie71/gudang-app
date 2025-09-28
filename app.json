@@ -21,12 +21,12 @@
        "intentFilters": [
         {
           "action": "VIEW",
+          "autoVerify": false,
           "category": ["BROWSABLE", "DEFAULT"],
           "data": [
             {
               "scheme": "com.googleusercontent.apps.82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of",
-              "host": "",
-              "pathPrefix": "/google"
+              "pathPrefix": "/oauth2redirect/google"
             }
           ]
         }
