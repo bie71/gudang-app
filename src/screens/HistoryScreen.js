@@ -94,17 +94,54 @@ export default function HistoryScreen() {
   };
 
   const renderItem = ({ item }) => (
-    <View style={{ backgroundColor: "#fff", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginBottom: 10 }}>
-      <Text style={{ fontWeight: "700" }}>{item.name}</Text>
-      <Text style={{ color: item.type === "IN" ? "#2563EB" : "#EF4444", fontWeight: "700" }}>{item.type} • Qty {item.qty}</Text>
-      {!!item.note && <Text style={{ color: "#64748B" }}>{item.note}</Text>}
-      <Text style={{ color: "#94A3B8", marginTop: 4 }}>{item.created_at}</Text>
+    <View
+      style={{
+        backgroundColor: "#fff",
+        padding: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 12,
+        shadowColor: "#0F172A",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 3,
+      }}
+    >
+      <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", marginBottom: 8 }}>{item.name}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <View
+          style={{
+            backgroundColor: item.type === "IN" ? "#F0FDFA" : "#FEF2F2",
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 10,
+          }}
+        >
+          <Text
+            style={{
+              color: item.type === "IN" ? "#0D9488" : "#B91C1C",
+              fontSize: 11,
+              fontWeight: "700",
+              letterSpacing: 0.2,
+            }}
+          >
+            {item.type === "IN" ? "MASUK" : "KELUAR"}
+          </Text>
+        </View>
+        <Text style={{ color: "#475569", fontWeight: "600", fontSize: 13 }}>
+          Qty {item.qty} pcs
+        </Text>
+      </View>
+      {!!item.note && <Text style={{ color: "#64748B", fontSize: 13, marginBottom: 4 }}>{item.note}</Text>}
+      <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 4 }}>{item.created_at}</Text>
     </View>
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", padding: 16 }}>
-      <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>History</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", padding: 16 }}>
+      <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 16, letterSpacing: -0.5 }}>History</Text>
       <TextInput
         placeholder="Cari nama, catatan, atau tipe..."
         value={searchTerm}
@@ -112,12 +149,15 @@ export default function HistoryScreen() {
         style={{
           backgroundColor: "#fff",
           borderWidth: 1,
-          borderColor: "#E5E7EB",
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          height: 44,
-          marginBottom: 12,
+          borderColor: "#E2E8F0",
+          borderRadius: 14,
+          paddingHorizontal: 16,
+          height: 48,
+          fontSize: 15,
+          color: "#0F172A",
+          marginBottom: 16,
         }}
+        placeholderTextColor="#94A3B8"
       />
       <FlatList
         data={rows}

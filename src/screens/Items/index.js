@@ -472,7 +472,7 @@ export function ItemsScreen({ navigation }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <View style={{ padding: 16, flex: 1 }}>
-        <View style={{ marginBottom: 12 }}>
+        <View style={{ marginBottom: 16 }}>
           <TextInput
             placeholder="Cari nama/kategori…"
             value={searchTerm}
@@ -480,11 +480,13 @@ export function ItemsScreen({ navigation }) {
             style={{
               backgroundColor: "#fff",
               borderWidth: 1,
-              borderColor: "#E5E7EB",
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              height: 44,
-              marginBottom: 10,
+              borderColor: "#F1F5F9",
+              borderRadius: 16,
+              paddingHorizontal: 16,
+              height: 48,
+              fontSize: 15,
+              color: "#0F172A",
+              marginBottom: 16,
             }}
             placeholderTextColor="#94A3B8"
           />
@@ -495,50 +497,68 @@ export function ItemsScreen({ navigation }) {
                   onDone: () => loadItems({ search: searchTerm, reset: true }),
                 })
               }
+              activeOpacity={0.7}
               style={{
                 flex: 1,
                 backgroundColor: "#10B981",
                 paddingHorizontal: 16,
-                borderRadius: 12,
+                borderRadius: 14,
                 alignItems: "center",
                 justifyContent: "center",
-                height: 44,
+                height: 46,
+                shadowColor: "#10B981",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 2,
               }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>+ Barang</Text>
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>+ Barang</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openReportModal}
+              activeOpacity={0.7}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
                 backgroundColor: "#2563EB",
-                paddingHorizontal: 14,
-                borderRadius: 12,
+                paddingHorizontal: 16,
+                borderRadius: 14,
                 gap: 6,
-                height: 44,
+                height: 46,
+                shadowColor: "#2563EB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 2,
               }}
             >
               <Ionicons name="document-text-outline" size={18} color="#fff" />
-              <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>PDF</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleExportCsv}
               disabled={csvExporting}
+              activeOpacity={0.7}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
                 backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
-                paddingHorizontal: 14,
-                borderRadius: 12,
+                paddingHorizontal: 16,
+                borderRadius: 14,
                 gap: 6,
-                height: 44,
+                height: 46,
+                shadowColor: csvExporting ? "transparent" : "#16A34A",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: csvExporting ? 0 : 0.15,
+                shadowRadius: 8,
+                elevation: csvExporting ? 0 : 2,
               }}
             >
               {csvExporting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
-              <Text style={{ color: "#fff", fontWeight: "700" }}>CSV</Text>
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>CSV</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -553,11 +573,16 @@ export function ItemsScreen({ navigation }) {
               <View
                 style={{
                   backgroundColor: "#fff",
-                  padding: 12,
-                  borderRadius: 12,
+                  padding: 16,
+                  borderRadius: 20,
                   borderWidth: 1,
-                  borderColor: "#E5E7EB",
-                  marginBottom: 10,
+                  borderColor: "#F1F5F9",
+                  marginBottom: 12,
+                  shadowColor: "#0F172A",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 12,
+                  elevation: 3,
                 }}
               >
                 <TouchableOpacity
@@ -605,6 +630,7 @@ export function ItemsScreen({ navigation }) {
                     color="#EF4444"
                   />
                   <TouchableOpacity
+                    activeOpacity={0.7}
                     onPress={() =>
                       navigation.navigate("AddItem", {
                         item,
@@ -616,30 +642,31 @@ export function ItemsScreen({ navigation }) {
                       alignItems: "center",
                       paddingVertical: 10,
                       paddingHorizontal: 14,
-                      borderRadius: 10,
+                      borderRadius: 12,
                       borderWidth: 1,
                       borderColor: "#3B82F6",
-                      backgroundColor: "#fff",
+                      backgroundColor: "#EFF6FF",
                     }}
                   >
-                    <Ionicons name="create-outline" size={18} color="#3B82F6" style={{ marginRight: 6 }} />
-                    <Text style={{ color: "#3B82F6", fontWeight: "700" }}>Edit</Text>
+                    <Ionicons name="create-outline" size={18} color="#2563EB" style={{ marginRight: 6 }} />
+                    <Text style={{ color: "#2563EB", fontWeight: "600" }}>Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    activeOpacity={0.7}
                     onPress={() => confirmDelete(item)}
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
                       paddingVertical: 10,
                       paddingHorizontal: 14,
-                      borderRadius: 10,
+                      borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: "#F87171",
-                      backgroundColor: "#fff",
+                      borderColor: "#EF4444",
+                      backgroundColor: "#FEF2F2",
                     }}
                   >
-                    <Ionicons name="trash-outline" size={18} color="#F87171" style={{ marginRight: 6 }} />
-                    <Text style={{ color: "#F87171", fontWeight: "700" }}>Hapus</Text>
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                    <Text style={{ color: "#EF4444", fontWeight: "600" }}>Hapus</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -997,9 +1024,23 @@ export function ItemDetailScreen({ route, navigation }) {
     : "Tidak ada riwayat";
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-        <View style={{ backgroundColor: "#fff", padding: 18, borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 16 }}>
+        <View
+          style={{
+            backgroundColor: "#fff",
+            padding: 20,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: "#F1F5F9",
+            marginBottom: 16,
+            shadowColor: "#0F172A",
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.03,
+            shadowRadius: 12,
+            elevation: 1,
+          }}
+        >
           <Text style={{ fontSize: 22, fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
           <Text style={{ color: "#64748B", marginTop: 6 }}>{categoryDisplay}</Text>
           <View style={{ marginTop: 18, gap: 12 }}>
@@ -1324,7 +1365,7 @@ export function AddItemScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
         <Input label="Nama" value={name} onChangeText={setName} placeholder="contoh: Kardus 40x40" />
@@ -1352,14 +1393,35 @@ export function AddItemScreen({ route, navigation }) {
         />
         <TouchableOpacity
           onPress={save}
-          style={{ marginTop: 16, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}
+          activeOpacity={0.7}
+          style={{
+            marginTop: 20,
+            backgroundColor: "#2563EB",
+            paddingVertical: 14,
+            borderRadius: 14,
+            alignItems: "center",
+            shadowColor: "#2563EB",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.18,
+            shadowRadius: 10,
+            elevation: 2,
+          }}
         >
-          <Text style={{ color: "#fff", fontWeight: "700" }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
+          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}>{isEdit ? "Simpan Perubahan" : "Simpan"}</Text>
         </TouchableOpacity>
         {isEdit ? (
           <TouchableOpacity
             onPress={resetForm}
-            style={{ marginTop: 12, paddingVertical: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#CBD5F5" }}
+            activeOpacity={0.7}
+            style={{
+              marginTop: 12,
+              paddingVertical: 12,
+              borderRadius: 14,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              backgroundColor: "#fff",
+            }}
           >
             <Text style={{ color: "#2563EB", fontWeight: "600" }}>Buat Item Baru</Text>
           </TouchableOpacity>
@@ -1401,7 +1463,7 @@ export function StockMoveScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 6 }}>{mode === "IN" ? "Barang Masuk" : "Barang Keluar"}</Text>
         <Text style={{ color: "#64748B" }}>

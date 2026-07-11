@@ -1,16 +1,11 @@
 {
   "expo": {
-    "scheme": "gudangapp",
-    "name": "Gudang App",
+    "scheme": "bukutoko",
+    "name": "BukuToko",
     "slug": "gudang-app",
     "version": "1.4.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F9FAFB"
-    },
     "android": {
       "package": "com.company.gudang",
       "versionCode": 12,
@@ -32,6 +27,14 @@
       ]
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
       "expo-sqlite",
       "expo-web-browser"
     ],

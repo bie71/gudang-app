@@ -18,7 +18,17 @@ export default function TabsNavigator() {
         tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#94A3B8",
         tabBarHideOnKeyboard: true,
-        tabBarStyle: { backgroundColor: "#fff", borderTopColor: "#E2E8F0" },
+        tabBarStyle: { 
+          backgroundColor: "#fff", 
+          borderTopWidth: 0,
+          height: 64,
+          paddingBottom: 8,
+          shadowColor: "#0F172A",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.05,
+          shadowRadius: 10,
+          elevation: 10,
+        },
         tabBarLabelStyle: { fontWeight: "600" },
         tabBarIcon: ({ color, size }) => {
           let iconName = "ellipse-outline";

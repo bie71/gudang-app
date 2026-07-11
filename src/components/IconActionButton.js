@@ -11,25 +11,31 @@ export default function IconActionButton({
   onPressIn,
 }) {
   return (
-    <TouchableOpacity activeOpacity={0.85} onPressIn={onPressIn} onPress={onPress} style={{ alignItems: "center", width: 72 }}>
+    <TouchableOpacity 
+      activeOpacity={0.7} 
+      onPressIn={onPressIn} 
+      onPress={onPress} 
+      style={{ alignItems: "center", width: 76 }}
+    >
       <View
         style={{
           width: 56,
           height: 56,
-          borderRadius: 28,
+          borderRadius: 20,
           backgroundColor,
           alignItems: "center",
           justifyContent: "center",
-          marginBottom: 6,
+          marginBottom: 8,
           shadowColor: "#0F172A",
-          shadowOpacity: 0.06,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
           shadowRadius: 8,
-          elevation: 2,
+          elevation: 3,
         }}
       >
         <Ionicons name={icon} size={24} color={iconColor} />
       </View>
-      <Text style={{ fontSize: 11, textAlign: "center", color: "#475569" }}>{label}</Text>
+      <Text style={{ fontSize: 11, textAlign: "center", color: "#475569", fontWeight: "600" }}>{label}</Text>
     </TouchableOpacity>
   );
 }

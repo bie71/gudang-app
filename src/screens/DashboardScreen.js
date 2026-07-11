@@ -1038,7 +1038,7 @@ export default function DashboardScreen({ navigation }) {
                     flex: 1,
                     backgroundColor: "#F8FAFC",
                     borderWidth: 1,
-                    borderColor: "#E2E8F0",
+                    borderColor: "#F1F5F9",
                     borderRadius: 12,
                     paddingHorizontal: 12,
                     height: 42,
@@ -1075,7 +1075,7 @@ export default function DashboardScreen({ navigation }) {
                           alignItems: "flex-start",
                           paddingVertical: 12,
                           borderTopWidth: index === 0 ? 0 : 1,
-                          borderColor: "#E2E8F0",
+                          borderColor: "#F1F5F9",
                         }}
                       >
                         <View style={{ flex: 1, paddingRight: 12, marginBottom: 8 }}>
@@ -1139,7 +1139,7 @@ export default function DashboardScreen({ navigation }) {
                       alignItems: "flex-start",
                       paddingVertical: 12,
                       borderTopWidth: index === 0 ? 0 : 1,
-                      borderColor: "#E2E8F0",
+                      borderColor: "#F1F5F9",
                     }}
                   >
                     <View style={{ flex: 1, paddingRight: 12 }}>
@@ -1726,14 +1726,15 @@ export default function DashboardScreen({ navigation }) {
       <View
         style={{
           backgroundColor: "#fff",
-          borderRadius: 16,
+          borderRadius: 20,
           padding: 20,
           borderWidth: 1,
-          borderColor: "#E2E8F0",
+          borderColor: "#F1F5F9",
           shadowColor: "#0F172A",
-          shadowOpacity: 0.05,
-          shadowRadius: 12,
-          elevation: 2,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.04,
+          shadowRadius: 16,
+          elevation: 1,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
@@ -1822,14 +1823,15 @@ export default function DashboardScreen({ navigation }) {
       <View
         style={{
           backgroundColor: "#fff",
-          borderRadius: 16,
+          borderRadius: 20,
           padding: 20,
           borderWidth: 1,
-          borderColor: "#E2E8F0",
+          borderColor: "#F1F5F9",
           shadowColor: "#0F172A",
-          shadowOpacity: 0.05,
-          shadowRadius: 12,
-          elevation: 2,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.04,
+          shadowRadius: 16,
+          elevation: 1,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
@@ -1916,14 +1918,15 @@ export default function DashboardScreen({ navigation }) {
       <View
         style={{
           backgroundColor: "#fff",
-          borderRadius: 16,
+          borderRadius: 20,
           padding: 20,
           borderWidth: 1,
-          borderColor: "#E2E8F0",
+          borderColor: "#F1F5F9",
           shadowColor: "#0F172A",
-          shadowOpacity: 0.05,
-          shadowRadius: 12,
-          elevation: 2,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.04,
+          shadowRadius: 16,
+          elevation: 1,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
@@ -1972,7 +1975,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -1999,7 +2002,7 @@ export default function DashboardScreen({ navigation }) {
               alignItems: "center",
               paddingVertical: 12,
               borderTopWidth: index === 0 ? 0 : 1,
-              borderColor: "#E2E8F0",
+              borderColor: "#F1F5F9",
             }}
           >
             <View
@@ -2037,7 +2040,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -2064,7 +2067,7 @@ export default function DashboardScreen({ navigation }) {
               alignItems: "center",
               paddingVertical: 12,
               borderTopWidth: index === 0 ? 0 : 1,
-              borderColor: "#E2E8F0",
+              borderColor: "#F1F5F9",
             }}
           >
             <View
@@ -2105,7 +2108,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -2134,7 +2137,7 @@ export default function DashboardScreen({ navigation }) {
           return (
             <TouchableOpacity
               key={entry.id}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
               onPress={() =>
                 navigateToRoot("BookkeepingDetail", {
                   entryId: entry.id,
@@ -2146,7 +2149,7 @@ export default function DashboardScreen({ navigation }) {
                 alignItems: "center",
                 paddingVertical: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderColor: "#E2E8F0",
+                borderColor: "#F1F5F9",
               }}
             >
               <View
@@ -2185,7 +2188,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -2219,13 +2222,13 @@ export default function DashboardScreen({ navigation }) {
             <TouchableOpacity
               key={`item-profit-${entry.itemId ?? index}`}
               onPress={() => openItemProfitDetail(entry)}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
               style={{
                 flexDirection: "row",
                 alignItems: "flex-start",
                 paddingVertical: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderColor: "#E2E8F0",
+                borderColor: "#F1F5F9",
               }}
             >
               <View
@@ -2267,7 +2270,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -2308,13 +2311,13 @@ export default function DashboardScreen({ navigation }) {
             <TouchableOpacity
               key={`po-profit-${entry.id}`}
               onPress={() => openPoProfitDetail(entry)}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
               style={{
                 flexDirection: "row",
                 alignItems: "flex-start",
                 paddingVertical: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderColor: "#E2E8F0",
+                borderColor: "#F1F5F9",
               }}
             >
               <View
@@ -2356,7 +2359,7 @@ export default function DashboardScreen({ navigation }) {
         borderRadius: 16,
         padding: 20,
         borderWidth: 1,
-        borderColor: "#E2E8F0",
+        borderColor: "#F1F5F9",
         shadowColor: "#0F172A",
         shadowOpacity: 0.05,
         shadowRadius: 12,
@@ -2388,7 +2391,7 @@ export default function DashboardScreen({ navigation }) {
                 alignItems: "center",
                 paddingVertical: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderColor: "#E2E8F0",
+                borderColor: "#F1F5F9",
               }}
             >
               <View
@@ -2455,39 +2458,47 @@ export default function DashboardScreen({ navigation }) {
           <View
             style={{
               backgroundColor: "#2563EB",
-              borderRadius: 20,
-              padding: 20,
+              borderRadius: 28,
+              padding: 24,
               shadowColor: "#2563EB",
-              shadowOpacity: 0.18,
-              shadowRadius: 12,
-              elevation: 4,
+              shadowOffset: { width: 0, height: 12 },
+              shadowOpacity: 0.25,
+              shadowRadius: 20,
+              elevation: 8,
             }}
           >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View style={{ flex: 1, paddingRight: 16 }}>
-                <Text style={{ color: "#BFDBFE", fontSize: 13, letterSpacing: 0.4 }}>Inventori Gudang</Text>
-                <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", marginTop: 4 }}>Ringkasan Hari Ini</Text>
-                <Text style={{ color: "#DBEAFE", marginTop: 8 }}>{todayLabel}</Text>
+                <Text style={{ color: "#BFDBFE", fontSize: 13, fontWeight: "600", letterSpacing: 0.8, textTransform: "uppercase" }}>
+                  Inventori Gudang
+                </Text>
+                <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", marginTop: 6, letterSpacing: -0.5 }}>
+                  Ringkasan Hari Ini
+                </Text>
+                <Text style={{ color: "#DBEAFE", marginTop: 8, fontSize: 13, fontWeight: "500" }}>{todayLabel}</Text>
               </View>
               <View
                 style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 20,
-                  backgroundColor: "rgba(255,255,255,0.18)",
+                  width: 60,
+                  height: 60,
+                  borderRadius: 18,
+                  backgroundColor: "rgba(255,255,255,0.15)",
                   alignItems: "center",
                   justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.1)",
                 }}
               >
-                <MaterialCommunityIcons name="warehouse" size={36} color="#fff" />
+                <MaterialCommunityIcons name="warehouse" size={32} color="#fff" />
               </View>
             </View>
             <TouchableOpacity
               onPress={load}
+              activeOpacity={0.8}
               style={{
-                marginTop: 18,
-                backgroundColor: "rgba(255,255,255,0.2)",
-                borderRadius: 12,
+                marginTop: 20,
+                backgroundColor: "rgba(255,255,255,0.18)",
+                borderRadius: 14,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
@@ -2495,14 +2506,15 @@ export default function DashboardScreen({ navigation }) {
               }}
             >
               <Ionicons name="refresh" color="#fff" size={18} style={{ marginRight: 8 }} />
-              <Text style={{ color: "#fff", fontWeight: "600" }}>Perbarui Data</Text>
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Perbarui Data</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => navigation.navigate("DataManagement")}
+              activeOpacity={0.8}
               style={{
                 marginTop: 12,
-                backgroundColor: "rgba(255,255,255,0.15)",
-                borderRadius: 12,
+                backgroundColor: "rgba(255,255,255,0.1)",
+                borderRadius: 14,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
@@ -2510,7 +2522,7 @@ export default function DashboardScreen({ navigation }) {
               }}
             >
               <Ionicons name="cloud-download-outline" color="#fff" size={18} style={{ marginRight: 8 }} />
-              <Text style={{ color: "#fff", fontWeight: "600" }}>Backup & Restore</Text>
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Backup & Restore</Text>
             </TouchableOpacity>
           </View>
 
@@ -2541,26 +2553,31 @@ export default function DashboardScreen({ navigation }) {
                       onLongPress={() => setTooltipTab(key)}
                       onPressOut={() => setTooltipTab(null)}
                       delayLongPress={200}
-                      activeOpacity={0.85}
+                      activeOpacity={0.7}
                       style={{
-                        width: 56,
-                        height: 56,
-                        borderRadius: 28,
-                        backgroundColor: isActive ? "#2563EB" : "#E2E8F0",
+                        width: 54,
+                        height: 54,
+                        borderRadius: 22,
+                        backgroundColor: isActive ? "#2563EB" : "#fff",
                         alignItems: "center",
                         justifyContent: "center",
                         borderWidth: isActive ? 0 : 1,
-                        borderColor: "#CBD5F5",
+                        borderColor: "#E2E8F0",
+                        shadowColor: isActive ? "#2563EB" : "#0F172A",
+                        shadowOffset: { width: 0, height: 6 },
+                        shadowOpacity: isActive ? 0.3 : 0.05,
+                        shadowRadius: 10,
+                        elevation: isActive ? 4 : 2,
                       }}
                     >
-                      <Ionicons name={icon} size={isActive ? 26 : 24} color={isActive ? "#fff" : "#334155"} />
+                      <Ionicons name={icon} size={isActive ? 24 : 22} color={isActive ? "#fff" : "#475569"} />
                     </TouchableOpacity>
                   </View>
                   <Text
                     style={{
-                      marginTop: 10,
+                      marginTop: 8,
                       color: isActive ? "#2563EB" : "#64748B",
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: "600",
                       textAlign: "center",
                     }}

@@ -27,21 +27,24 @@ export default function DatePickerField({ label, value, onChange }) {
   };
 
   return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={{ marginBottom: 6, color: "#475569" }}>{label}</Text>
+    <View style={{ marginBottom: 16 }}>
+      <Text style={{ marginBottom: 8, color: "#475569", fontWeight: "600", fontSize: 13, letterSpacing: 0.1 }}>
+        {label}
+      </Text>
       <TouchableOpacity
         onPress={openPicker}
+        activeOpacity={0.7}
         style={{
           backgroundColor: "#fff",
-          borderWidth: 1,
-          borderColor: "#E5E7EB",
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          height: 44,
+          borderWidth: 1.5,
+          borderColor: "#E2E8F0",
+          borderRadius: 16,
+          paddingHorizontal: 16,
+          height: 52,
           justifyContent: "center",
         }}
       >
-        <Text style={{ color: value ? "#0F172A" : "#94A3B8" }}>
+        <Text style={{ color: value ? "#0F172A" : "#94A3B8", fontSize: 15 }}>
           {value ? formatDateDisplay(value) : "Pilih tanggal"}
         </Text>
       </TouchableOpacity>

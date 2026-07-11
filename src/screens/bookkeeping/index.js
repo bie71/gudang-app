@@ -496,15 +496,20 @@ export function BookkeepingScreen({ navigation }) {
     <View
       style={{
         backgroundColor: "#fff",
-        padding: 14,
-        borderRadius: 12,
+        padding: 16,
+        borderRadius: 20,
         borderWidth: 1,
-        borderColor: "#E5E7EB",
-        marginBottom: 10,
+        borderColor: "#F1F5F9",
+        marginBottom: 12,
+        shadowColor: "#0F172A",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 3,
       }}
     >
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.7}
         onPress={() =>
           navigateToRoot("BookkeepingDetail", {
             entryId: item.id,
@@ -525,13 +530,14 @@ export function BookkeepingScreen({ navigation }) {
           <Text style={{ color: "#2563EB", fontWeight: "700" }}>{formatCurrencyValue(item.amount)}</Text>
         </View>
       </TouchableOpacity>
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
         <TouchableOpacity
           onPress={() => openAdjustModal(item, "ADD")}
+          activeOpacity={0.7}
           style={{
             flex: 1,
             paddingVertical: 10,
-            borderRadius: 10,
+            borderRadius: 12,
             borderWidth: 1,
             borderColor: "#22C55E",
             alignItems: "center",
@@ -542,10 +548,11 @@ export function BookkeepingScreen({ navigation }) {
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => openAdjustModal(item, "SUBTRACT")}
+          activeOpacity={0.7}
           style={{
             flex: 1,
             paddingVertical: 10,
-            borderRadius: 10,
+            borderRadius: 12,
             borderWidth: 1,
             borderColor: "#F87171",
             alignItems: "center",
@@ -603,33 +610,43 @@ export function BookkeepingScreen({ navigation }) {
             style={{
               flex: 1,
               backgroundColor: "#fff",
-              borderRadius: 16,
+              borderRadius: 20,
               borderWidth: 1,
-              borderColor: "#E2E8F0",
-              padding: 16,
+              borderColor: "#F1F5F9",
+              padding: 18,
+              shadowColor: "#0F172A",
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.03,
+              shadowRadius: 12,
+              elevation: 1,
             }}
           >
-            <Text style={{ color: "#94A3B8", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.08 }}>Catatan</Text>
+            <Text style={{ color: "#64748B", fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>Catatan</Text>
             <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A", marginTop: 6 }}>
               {formatNumberValue(summary.totalEntries)}
             </Text>
-            <Text style={{ color: "#64748B", marginTop: 4 }}>Total catatan tersimpan</Text>
+            <Text style={{ color: "#94A3B8", marginTop: 4, fontSize: 12 }}>Total catatan tersimpan</Text>
           </View>
           <View
             style={{
               flex: 1,
               backgroundColor: "#fff",
-              borderRadius: 16,
+              borderRadius: 20,
               borderWidth: 1,
-              borderColor: "#E2E8F0",
-              padding: 16,
+              borderColor: "#F1F5F9",
+              padding: 18,
+              shadowColor: "#0F172A",
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.03,
+              shadowRadius: 12,
+              elevation: 1,
             }}
           >
-            <Text style={{ color: "#94A3B8", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.08 }}>Nominal</Text>
+            <Text style={{ color: "#64748B", fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>Nominal</Text>
             <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A", marginTop: 6 }}>
               {formatCurrencyValue(summary.totalAmount)}
             </Text>
-            <Text style={{ color: "#64748B", marginTop: 4 }}>Akumulasi nominal</Text>
+            <Text style={{ color: "#94A3B8", marginTop: 4, fontSize: 12 }}>Akumulasi nominal</Text>
           </View>
         </View>
 
@@ -640,10 +657,12 @@ export function BookkeepingScreen({ navigation }) {
           style={{
             backgroundColor: "#fff",
             borderWidth: 1,
-            borderColor: "#E5E7EB",
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 44,
+            borderColor: "#F1F5F9",
+            borderRadius: 16,
+            paddingHorizontal: 16,
+            height: 48,
+            fontSize: 15,
+            color: "#0F172A",
             marginBottom: 12,
           }}
           placeholderTextColor="#94A3B8"
@@ -652,28 +671,40 @@ export function BookkeepingScreen({ navigation }) {
         <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
           <TouchableOpacity
             onPress={openReportModal}
+            activeOpacity={0.7}
             style={{
               flexDirection: "row",
               alignItems: "center",
               backgroundColor: "#0EA5E9",
               paddingHorizontal: 16,
-              borderRadius: 12,
-              height: 44,
+              borderRadius: 14,
+              height: 46,
+              shadowColor: "#0EA5E9",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.15,
+              shadowRadius: 8,
+              elevation: 2,
             }}
           >
             <Ionicons name="document-text-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Laporan PDF</Text>
+            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Laporan PDF</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleExportCsv}
             disabled={csvExporting}
+            activeOpacity={0.7}
             style={{
               flexDirection: "row",
               alignItems: "center",
               backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
               paddingHorizontal: 16,
-              borderRadius: 12,
-              height: 44,
+              borderRadius: 14,
+              height: 46,
+              shadowColor: csvExporting ? "transparent" : "#16A34A",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: csvExporting ? 0 : 0.15,
+              shadowRadius: 8,
+              elevation: csvExporting ? 0 : 2,
             }}
           >
             {csvExporting ? (
@@ -681,24 +712,30 @@ export function BookkeepingScreen({ navigation }) {
             ) : (
               <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
             )}
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor CSV</Text>
+            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>CSV</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() =>
               navigateToRoot("AddBookkeeping", {
               })
             }
+            activeOpacity={0.7}
             style={{
               flex: 1,
               backgroundColor: "#2563EB",
               paddingHorizontal: 16,
-              borderRadius: 12,
+              borderRadius: 14,
               alignItems: "center",
               justifyContent: "center",
-              height: 44,
+              height: 46,
+              shadowColor: "#2563EB",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.15,
+              shadowRadius: 8,
+              elevation: 2,
             }}
           >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>+ Pembukuan</Text>
+            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>+ Pembukuan</Text>
           </TouchableOpacity>
         </View>
 
@@ -827,12 +864,18 @@ export function BookkeepingScreen({ navigation }) {
             <TouchableOpacity
               onPress={handleAdjustSubmit}
               disabled={adjustModal.loading}
+              activeOpacity={0.7}
               style={{
                 marginTop: 18,
                 backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
                 paddingVertical: 14,
-                borderRadius: 12,
+                borderRadius: 14,
                 alignItems: "center",
+                shadowColor: adjustModal.loading ? "transparent" : "#2563EB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: adjustModal.loading ? 0 : 0.18,
+                shadowRadius: 10,
+                elevation: adjustModal.loading ? 0 : 2,
               }}
             >
               {adjustModal.loading ? (
@@ -844,13 +887,15 @@ export function BookkeepingScreen({ navigation }) {
             <TouchableOpacity
               onPress={closeAdjustModal}
               disabled={adjustModal.loading}
+              activeOpacity={0.7}
               style={{
                 marginTop: 12,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 14,
                 alignItems: "center",
                 borderWidth: 1,
-                borderColor: "#CBD5F5",
+                borderColor: "#E2E8F0",
+                backgroundColor: "#fff",
               }}
             >
               <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
@@ -1020,7 +1065,7 @@ export function AddBookkeepingScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>
           {isEdit ? "Edit Pembukuan" : "Tambah Pembukuan"}
@@ -1049,28 +1094,36 @@ export function AddBookkeepingScreen({ route, navigation }) {
         />
         <TouchableOpacity
           onPress={save}
+          activeOpacity={0.7}
           style={{
-            marginTop: 16,
+            marginTop: 20,
             backgroundColor: "#2563EB",
             paddingVertical: 14,
-            borderRadius: 12,
+            borderRadius: 14,
             alignItems: "center",
+            shadowColor: "#2563EB",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.18,
+            shadowRadius: 10,
+            elevation: 2,
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "700" }}>
+          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}>
             {isEdit ? "Simpan Perubahan" : "Simpan"}
           </Text>
         </TouchableOpacity>
         {isEdit ? (
           <TouchableOpacity
             onPress={resetForm}
+            activeOpacity={0.7}
             style={{
               marginTop: 12,
               paddingVertical: 12,
-              borderRadius: 12,
+              borderRadius: 14,
               alignItems: "center",
               borderWidth: 1,
-              borderColor: "#CBD5F5",
+              borderColor: "#E2E8F0",
+              backgroundColor: "#fff",
             }}
           >
             <Text style={{ color: "#2563EB", fontWeight: "600" }}>Buat Catatan Baru</Text>
@@ -1514,16 +1567,21 @@ export function BookkeepingDetailScreen({ route, navigation }) {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         <View
           style={{
             backgroundColor: "#fff",
-            padding: 18,
-            borderRadius: 16,
+            padding: 20,
+            borderRadius: 20,
             borderWidth: 1,
-            borderColor: "#E2E8F0",
+            borderColor: "#F1F5F9",
             marginBottom: 16,
+            shadowColor: "#0F172A",
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.03,
+            shadowRadius: 12,
+            elevation: 1,
           }}
         >
           <Text style={{ fontSize: 22, fontWeight: "700", color: "#0F172A" }}>{entry.name}</Text>
@@ -1557,10 +1615,15 @@ export function BookkeepingDetailScreen({ route, navigation }) {
         <View
           style={{
             backgroundColor: "#fff",
-            padding: 18,
-            borderRadius: 16,
+            padding: 20,
+            borderRadius: 20,
             borderWidth: 1,
-            borderColor: "#E2E8F0",
+            borderColor: "#F1F5F9",
+            shadowColor: "#0F172A",
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.03,
+            shadowRadius: 12,
+            elevation: 1,
           }}
         >
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1864,12 +1927,18 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             <TouchableOpacity
               onPress={handleAdjustSubmit}
               disabled={adjustModal.loading}
+              activeOpacity={0.7}
               style={{
                 marginTop: 18,
                 backgroundColor: adjustModal.loading ? "#93C5FD" : "#2563EB",
                 paddingVertical: 14,
-                borderRadius: 12,
+                borderRadius: 14,
                 alignItems: "center",
+                shadowColor: adjustModal.loading ? "transparent" : "#2563EB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: adjustModal.loading ? 0 : 0.18,
+                shadowRadius: 10,
+                elevation: adjustModal.loading ? 0 : 2,
               }}
             >
               {adjustModal.loading ? (
@@ -1881,13 +1950,15 @@ export function BookkeepingDetailScreen({ route, navigation }) {
             <TouchableOpacity
               onPress={closeAdjustModal}
               disabled={adjustModal.loading}
+              activeOpacity={0.7}
               style={{
                 marginTop: 12,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 14,
                 alignItems: "center",
                 borderWidth: 1,
-                borderColor: "#CBD5F5",
+                borderColor: "#E2E8F0",
+                backgroundColor: "#fff",
               }}
             >
               <Text style={{ color: "#2563EB", fontWeight: "600" }}>Batal</Text>
@@ -2068,7 +2139,7 @@ export function BookkeepingHistoryScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
       <View style={{ padding: 16, paddingBottom: 8 }}>
         <TextInput
           value={searchTerm}

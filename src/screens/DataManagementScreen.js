@@ -39,7 +39,7 @@ export default function DataManagementScreen({ navigation }) {
   const googleConfig = useMemo(
     () => ({
       // expoClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_EXPO || extraClients.expo,
-      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || extraClients.android,
+      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || extraClients.android || "82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of.apps.googleusercontent.com",
       // iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || extraClients.ios,
       // webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || extraClients.web,
     }),
