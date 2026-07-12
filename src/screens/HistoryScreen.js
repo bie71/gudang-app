@@ -5,13 +5,14 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { exec } from "../services/database";
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
   const PAGE_SIZE = 30;
   const [rows, setRows] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -140,56 +141,92 @@ export default function HistoryScreen() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", padding: 16 }}>
-      <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 16, letterSpacing: -0.5 }}>History</Text>
-      <TextInput
-        placeholder="Cari nama, catatan, atau tipe..."
-        value={searchTerm}
-        onChangeText={setSearchTerm}
-        style={{
-          backgroundColor: "#fff",
-          borderWidth: 1,
-          borderColor: "#E2E8F0",
-          borderRadius: 14,
-          paddingHorizontal: 16,
-          height: 48,
-          fontSize: 15,
-          color: "#0F172A",
-          marginBottom: 16,
-        }}
-        placeholderTextColor="#94A3B8"
-      />
-      <FlatList
-        data={rows}
-        keyExtractor={it => String(it.id)}
-        renderItem={renderItem}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.3}
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator color="#2563EB" />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          loading ? (
-            <View style={{ paddingVertical: 40 }}>
-              <ActivityIndicator color="#2563EB" />
-            </View>
-          ) : (
-            <View style={{ paddingVertical: 40, alignItems: "center" }}>
-              <Ionicons name="time-outline" size={32} color="#CBD5F5" />
-              <Text style={{ color: "#94A3B8", marginTop: 8 }}>
-                {searchTerm.trim() ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat stok."}
-              </Text>
-            </View>
-          )
-        }
-        contentContainerStyle={{ paddingBottom: 32 }}
-      />
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
+      {/* Dark Header Container */}
+      <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 20 }}>
+        {/* Header row */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => navigation.goBack()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: "rgba(255, 255, 255, 0.15)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
+            Riwayat Aktivitas
+          </Text>
+        </View>
+
+        {/* Search input */}
+        <View
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 12,
+            height: 46,
+          }}
+        >
+          <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            style={{
+              flex: 1,
+              color: "#0F172A",
+              fontSize: 14,
+              height: "100%",
+              paddingVertical: 0,
+            }}
+            placeholderTextColor="#94A3B8"
+          />
+        </View>
+      </View>
+
+      {/* Main Content Area */}
+      <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+        <FlatList
+          data={rows}
+          keyExtractor={it => String(it.id)}
+          renderItem={renderItem}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 16 }}>
+                <ActivityIndicator color="#0D9488" />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ paddingVertical: 40 }}>
+                <ActivityIndicator color="#0D9488" />
+              </View>
+            ) : (
+              <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                <Ionicons name="time-outline" size={32} color="#CBD5F5" />
+                <Text style={{ color: "#94A3B8", marginTop: 8 }}>
+                  {searchTerm.trim() ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat stok."}
+                </Text>
+              </View>
+            )
+          }
+        />
+      </View>
     </SafeAreaView>
   );
 }

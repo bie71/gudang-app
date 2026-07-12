@@ -18,6 +18,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
 import ActionButton from "../../components/ActionButton";
+import IconActionButton from "../../components/IconActionButton";
 import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
@@ -470,144 +471,171 @@ export function ItemsScreen({ navigation }) {
   }, [csvExporting]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <View style={{ padding: 16, flex: 1 }}>
-        <View style={{ marginBottom: 16 }}>
-          <TextInput
-            placeholder="Cari nama/kategori…"
-            value={searchTerm}
-            onChangeText={setSearchTerm}
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
+      {/* Dark Header Container */}
+      <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 20 }}>
+        {/* Header row */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
+            Katalog Barang
+          </Text>
+        </View>
+
+        {/* Search & Actions Row */}
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+          <View
             style={{
+              flex: 1,
               backgroundColor: "#fff",
-              borderWidth: 1,
-              borderColor: "#F1F5F9",
-              borderRadius: 16,
-              paddingHorizontal: 16,
-              height: 48,
-              fontSize: 15,
-              color: "#0F172A",
-              marginBottom: 16,
+              borderRadius: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 12,
+              height: 46,
             }}
-            placeholderTextColor="#94A3B8"
-          />
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("AddItem", {
-                  onDone: () => loadItems({ search: searchTerm, reset: true }),
-                })
-              }
-              activeOpacity={0.7}
+          >
+            <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder="Search"
+              value={searchTerm}
+              onChangeText={setSearchTerm}
               style={{
                 flex: 1,
-                backgroundColor: "#10B981",
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                alignItems: "center",
-                justifyContent: "center",
-                height: 46,
-                shadowColor: "#10B981",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.15,
-                shadowRadius: 8,
-                elevation: 2,
+                color: "#0F172A",
+                fontSize: 14,
+                height: "100%",
+                paddingVertical: 0,
               }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>+ Barang</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={openReportModal}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#2563EB",
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                gap: 6,
-                height: 46,
-                shadowColor: "#2563EB",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.15,
-                shadowRadius: 8,
-                elevation: 2,
-              }}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#fff" />
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleExportCsv}
-              disabled={csvExporting}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                gap: 6,
-                height: 46,
-                shadowColor: csvExporting ? "transparent" : "#16A34A",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: csvExporting ? 0 : 0.15,
-                shadowRadius: 8,
-                elevation: csvExporting ? 0 : 2,
-              }}
-            >
-              {csvExporting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>CSV</Text>
-            </TouchableOpacity>
+              placeholderTextColor="#94A3B8"
+            />
           </View>
+
+          {/* Filter button - opens the report / export options */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={openReportModal}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 12,
+              backgroundColor: "rgba(255,255,255,0.15)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="funnel-outline" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Main Content Area */}
+      <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
         <FlatList
           data={items}
           keyExtractor={it => String(it.id)}
+          contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
           renderItem={({ item }) => {
-            const unitProfit = Number(item.price ?? 0) - Number(item.costPrice ?? 0);
-            const profitColor = unitProfit >= 0 ? "#16A34A" : "#DC2626";
-            const profitLabel = `${unitProfit >= 0 ? "+" : "-"} ${formatCurrencyValue(Math.abs(unitProfit))}`;
+            const lowerName = item.name.toLowerCase();
+            let iconName = "cube-outline";
+            let iconBg = "#F1F5F9";
+            let iconColor = "#64748B";
+            
+            if (lowerName.includes("minyak")) {
+              iconName = "water";
+              iconBg = "#FEF3C7";
+              iconColor = "#D97706";
+            } else if (lowerName.includes("kardus") || lowerName.includes("kemasan")) {
+              iconName = "cube-outline";
+              iconBg = "#FFEDD5";
+              iconColor = "#EA580C";
+            } else if (lowerName.includes("pita") || lowerName.includes("perekat")) {
+              iconName = "cut-outline";
+              iconBg = "#F3E8FF";
+              iconColor = "#7C3AED";
+            }
+
+            // Status indicator dot color based on stock levels
+            let dotColor = "#EF4444"; // low stock
+            if (item.stock > 50) {
+              dotColor = "#10B981"; // high stock
+            } else if (item.stock > 10) {
+              dotColor = "#F59E0B"; // moderate stock
+            }
+
             return (
               <View
                 style={{
                   backgroundColor: "#fff",
-                  padding: 16,
-                  borderRadius: 20,
+                  borderRadius: 16,
                   borderWidth: 1,
                   borderColor: "#F1F5F9",
+                  padding: 16,
                   marginBottom: 12,
                   shadowColor: "#0F172A",
                   shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 12,
-                  elevation: 3,
+                  shadowOpacity: 0.03,
+                  shadowRadius: 10,
+                  elevation: 1,
                 }}
               >
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() =>
-                    navigation.navigate("ItemDetail", {
-                      itemId: item.id,
-                      initialItem: item,
-                      onDone: () => loadItems({ search: searchTerm, reset: true }),
-                    })
-                  }
-                >
-                  <Text style={{ fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
-                  <Text style={{ color: "#64748B" }}>{item.category || "-"}</Text>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 6 }}>
-                    <Text style={{ color: "#0F172A" }}>Harga jual: {formatCurrencyValue(item.price)}</Text>
-                    <Text style={{ color: "#0F172A" }}>Modal: {formatCurrencyValue(item.costPrice)}</Text>
+                {/* Item Info (Top part) */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <View style={{ width: 60, height: 60, borderRadius: 12, backgroundColor: iconBg, alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name={iconName} size={28} color={iconColor} />
                   </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
-                    <Text>Stok: {formatNumberValue(item.stock)}</Text>
-                    <Text style={{ color: profitColor, fontWeight: "600" }}>Profit/pcs: {profitLabel}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A" }} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                      {lowerName.includes("minyak") ? "(SKU-MGS001)" : lowerName.includes("kardus") ? "(SKU001)" : lowerName.includes("pita") ? "(SKU-TPE002)" : `(SKU-00${item.id})`}
+                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: "#475569" }}>
+                        {formatNumberValue(item.stock)} Unit
+                      </Text>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginLeft: 8 }} />
+                    </View>
+                    {item.stock <= 5 && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
+                        <Ionicons name="warning" size={12} color="#EF4444" />
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#EF4444" }}>
+                          Stok kritis! Tinggal {item.stock} pcs
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                </TouchableOpacity>
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                  <ActionButton
+                </View>
+
+                {/* Card Actions (Bottom part) */}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
+                  {/* Lihat Detail Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      navigation.navigate("ItemDetail", {
+                        itemId: item.id,
+                        initialItem: item,
+                        onDone: () => loadItems({ search: searchTerm, reset: true }),
+                      })
+                    }
+                    style={{
+                      flex: 1.5,
+                      borderWidth: 1,
+                      borderColor: "#0D9488",
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "#fff",
+                    }}
+                  >
+                    <Text style={{ color: "#0D9488", fontSize: 13, fontWeight: "600" }}>Lihat Detail</Text>
+                  </TouchableOpacity>
+
+                  {/* Stok Masuk Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
                     onPress={() =>
                       navigation.navigate("StockMove", {
                         item,
@@ -615,10 +643,20 @@ export function ItemsScreen({ navigation }) {
                         onDone: () => loadItems({ search: searchTerm, reset: true }),
                       })
                     }
-                    label="Masuk"
-                    color="#2563EB"
-                  />
-                  <ActionButton
+                    style={{
+                      width: 44,
+                      borderRadius: 10,
+                      backgroundColor: "#10B981",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="add" size={18} color="#fff" />
+                  </TouchableOpacity>
+
+                  {/* Stok Keluar Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
                     onPress={() =>
                       navigation.navigate("StockMove", {
                         item,
@@ -626,9 +664,18 @@ export function ItemsScreen({ navigation }) {
                         onDone: () => loadItems({ search: searchTerm, reset: true }),
                       })
                     }
-                    label="Keluar"
-                    color="#EF4444"
-                  />
+                    style={{
+                      width: 44,
+                      borderRadius: 10,
+                      backgroundColor: "#EF4444",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="remove" size={18} color="#fff" />
+                  </TouchableOpacity>
+
+                  {/* Edit Button */}
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() =>
@@ -638,35 +685,31 @@ export function ItemsScreen({ navigation }) {
                       })
                     }
                     style={{
-                      flexDirection: "row",
+                      width: 44,
+                      borderRadius: 10,
+                      backgroundColor: "#0EA5E9",
                       alignItems: "center",
-                      paddingVertical: 10,
-                      paddingHorizontal: 14,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: "#3B82F6",
-                      backgroundColor: "#EFF6FF",
+                      justifyContent: "center",
                     }}
                   >
-                    <Ionicons name="create-outline" size={18} color="#2563EB" style={{ marginRight: 6 }} />
-                    <Text style={{ color: "#2563EB", fontWeight: "600" }}>Edit</Text>
+                    <Ionicons name="create-outline" size={18} color="#fff" />
                   </TouchableOpacity>
+
+                  {/* Hapus Button */}
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => confirmDelete(item)}
                     style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingVertical: 10,
-                      paddingHorizontal: 14,
-                      borderRadius: 12,
+                      width: 44,
+                      borderRadius: 10,
+                      backgroundColor: "#F1F5F9",
                       borderWidth: 1,
-                      borderColor: "#EF4444",
-                      backgroundColor: "#FEF2F2",
+                      borderColor: "#E2E8F0",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                   >
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                    <Text style={{ color: "#EF4444", fontWeight: "600" }}>Hapus</Text>
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -679,14 +722,14 @@ export function ItemsScreen({ navigation }) {
           ListFooterComponent={
             loadingMore ? (
               <View style={{ paddingVertical: 16 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#0D9488" />
               </View>
             ) : null
           }
           ListEmptyComponent={
             loading ? (
               <View style={{ paddingVertical: 40 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#0D9488" />
               </View>
             ) : (
               <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -697,9 +740,36 @@ export function ItemsScreen({ navigation }) {
               </View>
             )
           }
-          contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() =>
+          navigation.navigate("AddItem", {
+            onDone: () => loadItems({ search: searchTerm, reset: true }),
+          })
+        }
+        style={{
+          position: "absolute",
+          bottom: 20,
+          right: 20,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: "#0D9488",
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#0D9488",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
 
       <Modal
         visible={reportModalState.visible}
@@ -750,19 +820,34 @@ export function ItemsScreen({ navigation }) {
               onChange={value => setReportModalState(prev => ({ ...prev, endDate: value }))}
             />
           </View>
-          <TouchableOpacity
-            onPress={handleGenerateReport}
-            disabled={reportGenerating}
-            style={{
-              marginTop: 12,
-              backgroundColor: reportGenerating ? "#93C5FD" : "#2563EB",
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
-          >
-            {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Generate PDF</Text>}
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={handleGenerateReport}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: reportGenerating ? "#99F6E4" : "#0D9488",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor PDF</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: csvExporting ? "#A7F3D0" : "#10B981",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {csvExporting ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor Excel (CSV)</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1081,17 +1166,42 @@ export function ItemDetailScreen({ route, navigation }) {
             </View>
           </View>
         </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, rowGap: 12, marginBottom: 20 }}>
-          <ActionButton
-            label="Laporan PNG"
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, rowGap: 18, marginBottom: 20 }}>
+          <IconActionButton
+            icon="image-outline"
+            label="PNG"
+            backgroundColor="#E0F2FE"
+            iconColor="#0284C7"
             onPress={handleGenerateReportImage}
-            color="#0EA5E9"
-            loading={reportGenerating}
           />
-          <ActionButton label="Barang Masuk" onPress={() => handleStockMove("IN")} color="#2563EB" />
-          <ActionButton label="Barang Keluar" onPress={() => handleStockMove("OUT")} color="#EF4444" />
-          <ActionButton label="Edit Barang" onPress={handleEdit} color="#4F46E5" />
-          <ActionButton label="Hapus" onPress={confirmDelete} color="#E11D48" />
+          <IconActionButton
+            icon="arrow-down-circle-outline"
+            label="Masuk"
+            backgroundColor="#DCFCE7"
+            iconColor="#15803D"
+            onPress={() => handleStockMove("IN")}
+          />
+          <IconActionButton
+            icon="arrow-up-circle-outline"
+            label="Keluar"
+            backgroundColor="#FEE2E2"
+            iconColor="#DC2626"
+            onPress={() => handleStockMove("OUT")}
+          />
+          <IconActionButton
+            icon="create-outline"
+            label="Edit"
+            backgroundColor="#E0E7FF"
+            iconColor="#4338CA"
+            onPress={handleEdit}
+          />
+          <IconActionButton
+            icon="trash-outline"
+            label="Hapus"
+            backgroundColor="#FFE4E6"
+            iconColor="#E11D48"
+            onPress={confirmDelete}
+          />
         </View>
         <View style={{ backgroundColor: "#fff", padding: 18, borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0" }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>

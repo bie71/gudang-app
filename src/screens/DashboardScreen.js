@@ -33,6 +33,7 @@ import {
 import { exec } from "../services/database";
 import { KEYBOARD_AVOIDING_BEHAVIOR } from "../components/FormScrollContainer";
 import { buildOrderItemLabel } from "../utils/purchaseOrders";
+import * as SecureStore from "expo-secure-store";
 
 export default function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
@@ -49,22 +50,33 @@ export default function DashboardScreen({ navigation }) {
     totalOutValue: 0,
     poCount: 0,
     poProgress: 0,
+    poDone: 0,
     poProgressValue: 0,
     poTotalValue: 0,
     poProgressProfit: 0,
+    poDoneProfit: 0,
     poCancelledCount: 0,
     poCancelledTotal: 0,
     bookkeepingCount: 0,
     bookkeepingTotal: 0,
     itemProfitTotal: 0,
     poProfitTotal: 0,
+    inQtyToday: 0,
+    outQtyToday: 0,
   });
+  const [priorityItems, setPriorityItems] = useState([]);
   const [categoryStats, setCategoryStats] = useState([]);
   const [topItems, setTopItems] = useState([]);
   const [recentPOs, setRecentPOs] = useState([]);
   const [recentBookkeeping, setRecentBookkeeping] = useState([]);
   const [itemProfitLeaders, setItemProfitLeaders] = useState([]);
   const [poProfitLeaders, setPoProfitLeaders] = useState([]);
+  const [gudangSearch, setGudangSearch] = useState("");
+  const [poSearch, setPoSearch] = useState("");
+  const [kasSearch, setKasSearch] = useState("");
+  const [storeName, setStoreName] = useState("Budi (Warehouse Manager)");
+  const [tempStoreName, setTempStoreName] = useState("");
+  const [storeNameModalVisible, setStoreNameModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [detailModal, setDetailModal] = useState({ visible: false, title: "", description: "", rows: [], type: null });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -80,9 +92,7 @@ export default function DashboardScreen({ navigation }) {
   const navigateToRoot = useCallback(
     (routeName, params) => {
       if (!navigation) return;
-      const parent = typeof navigation.getParent === "function" ? navigation.getParent() : null;
-      if (parent?.navigate) parent.navigate(routeName, params);
-      else navigation.navigate(routeName, params);
+      navigation.navigate(routeName, params);
     },
     [navigation],
   );
@@ -595,6 +605,19 @@ export default function DashboardScreen({ navigation }) {
           IFNULL(SUM(stock * price),0) as totalInventoryValue
         FROM items
       `);
+      const todayStockRes = await exec(`
+        SELECT
+          IFNULL(SUM(CASE WHEN type = 'IN' THEN qty ELSE 0 END), 0) as inQtyToday,
+          IFNULL(SUM(CASE WHEN type = 'OUT' THEN qty ELSE 0 END), 0) as outQtyToday
+        FROM stock_history
+        WHERE date(created_at) = date('now', 'localtime')
+      `);
+      const priorityItemsRes = await exec(`
+        SELECT id, name, category, stock, price
+        FROM items
+        ORDER BY stock ASC, name ASC
+        LIMIT 3
+      `);
       const outRes = await exec(`
         SELECT
           IFNULL(SUM(h.qty),0) as totalOutQty,
@@ -623,10 +646,12 @@ export default function DashboardScreen({ navigation }) {
         SELECT
           COUNT(*) as totalOrders,
           SUM(CASE WHEN status = 'PROGRESS' THEN 1 ELSE 0 END) as progressOrders,
+          SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as doneOrders,
           SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelledOrders,
           IFNULL(SUM(total_value), 0) as totalValue,
           IFNULL(SUM(CASE WHEN status = 'PROGRESS' THEN total_value ELSE 0 END), 0) as progressValue,
           IFNULL(SUM(CASE WHEN status = 'PROGRESS' THEN total_profit ELSE 0 END), 0) as progressProfit,
+          IFNULL(SUM(CASE WHEN status = 'DONE' THEN total_profit ELSE 0 END), 0) as doneProfit,
           IFNULL(SUM(CASE WHEN status = 'CANCELLED' THEN total_value ELSE 0 END), 0) as cancelledValue
         FROM (
           SELECT
@@ -824,12 +849,29 @@ export default function DashboardScreen({ navigation }) {
         });
       }
 
+      const todayStockRow = todayStockRes.rows.length ? todayStockRes.rows.item(0) : {};
+      const inQtyToday = Number(todayStockRow.inQtyToday ?? 0);
+      const outQtyToday = Number(todayStockRow.outQtyToday ?? 0);
+
+      const nextPriorityItems = [];
+      for (let i = 0; i < priorityItemsRes.rows.length; i++) {
+        const row = priorityItemsRes.rows.item(i);
+        nextPriorityItems.push({
+          id: row.id,
+          name: row.name,
+          category: row.category,
+          stock: Number(row.stock ?? 0),
+          price: Number(row.price ?? 0),
+        });
+      }
+
       setCategoryStats(nextCategoryStats);
       setTopItems(nextTopItems);
       setRecentPOs(nextRecentPOs);
       setRecentBookkeeping(nextRecentBookkeeping);
       setItemProfitLeaders(nextItemProfitLeaders);
       setPoProfitLeaders(nextPoProfitLeaders);
+      setPriorityItems(nextPriorityItems);
       setMetrics({
         totalStock: Number(summaryRow.totalStock ?? 0),
         totalItems: Number(summaryRow.totalItems ?? 0),
@@ -840,8 +882,10 @@ export default function DashboardScreen({ navigation }) {
         totalOutValue: Number(outRow.totalOutValue ?? 0),
         poCount: Number(poSummaryRow.totalOrders ?? 0),
         poProgress: Number(poSummaryRow.progressOrders ?? 0),
+        poDone: Number(poSummaryRow.doneOrders ?? 0),
         poProgressValue: Number(poSummaryRow.progressValue ?? 0),
         poProgressProfit: Number(poSummaryRow.progressProfit ?? 0),
+        poDoneProfit: Number(poSummaryRow.doneProfit ?? 0),
         poCancelledCount: Number(poSummaryRow.cancelledOrders ?? 0),
         poCancelledTotal: Number(poSummaryRow.cancelledValue ?? 0),
         poTotalValue: Number(poSummaryRow.totalValue ?? 0),
@@ -849,6 +893,8 @@ export default function DashboardScreen({ navigation }) {
         bookkeepingTotal: Number(bookkeepingSummaryRow.totalAmount ?? 0),
         itemProfitTotal,
         poProfitTotal,
+        inQtyToday,
+        outQtyToday,
       });
     } catch (error) {
       console.log("DASHBOARD LOAD ERROR:", error);
@@ -857,13 +903,45 @@ export default function DashboardScreen({ navigation }) {
     }
   }
 
+  const handleSaveStoreName = async () => {
+    try {
+      await SecureStore.setItemAsync("store_name", tempStoreName);
+      setStoreName(tempStoreName);
+      setStoreNameModalVisible(false);
+    } catch (e) {
+      console.log("Error saving store name:", e);
+    }
+  };
+
   useEffect(() => {
     load();
+    async function loadStoreName() {
+      try {
+        const saved = await SecureStore.getItemAsync("store_name");
+        if (saved) {
+          setStoreName(saved);
+        }
+      } catch (e) {
+        console.log("Error loading store name:", e);
+      }
+    }
+    loadStoreName();
   }, []);
   useEffect(() => {
     if (!navigation) return;
     const unsubscribe = navigation.addListener("focus", load);
-    return unsubscribe;
+
+    // Listen to parent bookkeeping refresh events
+    const parent = typeof navigation.getParent === "function" ? navigation.getParent() : null;
+    let unsubParent;
+    if (parent && typeof parent.addListener === "function") {
+      unsubParent = parent.addListener("bookkeeping:refresh", load);
+    }
+
+    return () => {
+      unsubscribe();
+      if (unsubParent) unsubParent();
+    };
   }, [navigation]);
 
   useEffect(() => {
@@ -2448,157 +2526,723 @@ export default function DashboardScreen({ navigation }) {
     }
   })();
 
+  const formatShortCurrency = (value) => {
+    if (value >= 1000000000) {
+      return `Rp ${(value / 1000000000).toFixed(1).replace(".", ",")} Miliar`;
+    } else if (value >= 1000000) {
+      const jt = value / 1000000;
+      return `Rp ${jt % 1 === 0 ? jt.toFixed(0) : jt.toFixed(1).replace(".", ",")}Jt`;
+    }
+    return formatCurrencyValue(value);
+  };
+
+
+  const getFormattedLocalDate = () => {
+    const days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    const months = [
+      "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+      "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ];
+    const d = new Date();
+    const dayName = days[d.getDay()];
+    const date = d.getDate();
+    const monthName = months[d.getMonth()];
+    const year = d.getFullYear();
+    return `${dayName}, ${date} ${monthName} ${year}`;
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9", marginBottom: -tabBarHeight }}>
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 24 + tabBarHeight }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor="#2563EB" />}
+        style={{ flex: 1, backgroundColor: "#F8FAFC" }}
+        contentContainerStyle={{ paddingBottom: 24 + tabBarHeight }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor="#fff" />}
       >
-        <View style={{ gap: 16 }}>
+        {/* Dark Header Container with Pemanis Header */}
+        <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 28 }}>
+          {/* Header row */}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="cube" size={24} color="#14B8A6" />
+              <Text style={{ color: "#fff", fontSize: 22, fontWeight: "800", letterSpacing: -0.5 }}>
+                BukuToko
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => Alert.alert("Notifikasi", "Tidak ada notifikasi baru")}>
+                <Ionicons name="notifications-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("History")}>
+                <Ionicons name="time-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("DataManagement")}>
+                <Ionicons name="settings-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Welcome and Date row (Pemanis Header) */}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: "#94A3B8", fontSize: 12, fontWeight: "500" }}>
+                Selamat bekerja kembali!
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setTempStoreName(storeName);
+                  setStoreNameModalVisible(true);
+                }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}
+              >
+                <Text style={{ color: "#E2E8F0", fontSize: 16, fontWeight: "700" }}>
+                  {storeName}
+                </Text>
+                <Ionicons name="pencil-sharp" size={12} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Today's Date (Pemanis Header) */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.08)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: "flex-start", marginTop: 18 }}>
+            <Ionicons name="calendar-outline" size={14} color="#94A3B8" />
+            <Text style={{ color: "#E2E8F0", fontSize: 12, fontWeight: "600" }}>
+              {getFormattedLocalDate()}
+            </Text>
+          </View>
+        </View>
+
+        {/* Group Cards Container */}
+        <View style={{ padding: 16, gap: 16 }}>
+          
+          {/* Group 1: Inventori Gudang */}
           <View
             style={{
-              backgroundColor: "#2563EB",
-              borderRadius: 28,
-              padding: 24,
-              shadowColor: "#2563EB",
-              shadowOffset: { width: 0, height: 12 },
-              shadowOpacity: 0.25,
-              shadowRadius: 20,
-              elevation: 8,
+              backgroundColor: "#fff",
+              borderRadius: 20,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.03,
+              shadowRadius: 10,
+              elevation: 1,
             }}
           >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <View style={{ flex: 1, paddingRight: 16 }}>
-                <Text style={{ color: "#BFDBFE", fontSize: 13, fontWeight: "600", letterSpacing: 0.8, textTransform: "uppercase" }}>
-                  Inventori Gudang
-                </Text>
-                <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", marginTop: 6, letterSpacing: -0.5 }}>
-                  Ringkasan Hari Ini
-                </Text>
-                <Text style={{ color: "#DBEAFE", marginTop: 8, fontSize: 13, fontWeight: "500" }}>{todayLabel}</Text>
+            {/* Group Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: "#F0FDFA", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="cube-outline" size={20} color="#0D9488" />
               </View>
-              <View
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 18,
-                  backgroundColor: "rgba(255,255,255,0.15)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
-                }}
-              >
-                <MaterialCommunityIcons name="warehouse" size={32} color="#fff" />
-              </View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>Inventori & Gudang</Text>
             </View>
-            <TouchableOpacity
-              onPress={load}
-              activeOpacity={0.8}
-              style={{
-                marginTop: 20,
-                backgroundColor: "rgba(255,255,255,0.18)",
-                borderRadius: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                paddingVertical: 12,
-              }}
-            >
-              <Ionicons name="refresh" color="#fff" size={18} style={{ marginRight: 8 }} />
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Perbarui Data</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => navigation.navigate("DataManagement")}
-              activeOpacity={0.8}
-              style={{
-                marginTop: 12,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderRadius: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                paddingVertical: 12,
-              }}
-            >
-              <Ionicons name="cloud-download-outline" color="#fff" size={18} style={{ marginRight: 8 }} />
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Backup & Restore</Text>
-            </TouchableOpacity>
-          </View>
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
-            {dashboardTabs.map(({ key, label, icon }) => {
-              const isActive = key === activeTab;
-              const showTooltip = tooltipTab === key;
-              return (
-                <View key={key} style={{ flex: 1, alignItems: "center" }}>
-                  <View style={{ position: "relative", alignItems: "center", paddingTop: 12 }}>
-                    {showTooltip && (
-                      <View
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          transform: [{ translateY: -24 }],
-                          paddingHorizontal: 10,
-                          paddingVertical: 4,
-                          backgroundColor: "rgba(15,23,42,0.92)",
-                          borderRadius: 8,
-                        }}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>{label}</Text>
-                      </View>
-                    )}
-                    <TouchableOpacity
-                      onPress={() => handleTabPress(key)}
-                      onLongPress={() => setTooltipTab(key)}
-                      onPressOut={() => setTooltipTab(null)}
-                      delayLongPress={200}
-                      activeOpacity={0.7}
-                      style={{
-                        width: 54,
-                        height: 54,
-                        borderRadius: 22,
-                        backgroundColor: isActive ? "#2563EB" : "#fff",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderWidth: isActive ? 0 : 1,
-                        borderColor: "#E2E8F0",
-                        shadowColor: isActive ? "#2563EB" : "#0F172A",
-                        shadowOffset: { width: 0, height: 6 },
-                        shadowOpacity: isActive ? 0.3 : 0.05,
-                        shadowRadius: 10,
-                        elevation: isActive ? 4 : 2,
-                      }}
-                    >
-                      <Ionicons name={icon} size={isActive ? 24 : 22} color={isActive ? "#fff" : "#475569"} />
-                    </TouchableOpacity>
+            {/* Group Stats */}
+            <View style={{ borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 16, marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="cube-outline" size={12} color="#0D9488" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total Barang</Text>
                   </View>
-                  <Text
-                    style={{
-                      marginTop: 8,
-                      color: isActive ? "#2563EB" : "#64748B",
-                      fontSize: 11,
-                      fontWeight: "600",
-                      textAlign: "center",
-                    }}
-                  >
-                    {label}
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                    {formatNumberValue(metrics.totalItems)}
                   </Text>
                 </View>
-              );
-            })}
+                <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#F1F5F9", paddingLeft: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="albums-outline" size={12} color="#0D9488" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total Qty Stok</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                    {formatNumberValue(metrics.totalStock)}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ borderTopWidth: 1, borderTopColor: "#F1F5F9", paddingTop: 12, marginTop: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="cash-outline" size={12} color="#0D9488" />
+                  <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Nilai Persediaan</Text>
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                  {formatCurrencyValue(metrics.totalValue)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Group Search Input */}
+            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, height: 32, marginBottom: 12 }}>
+              <Ionicons name="search-outline" size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+              <TextInput
+                placeholder="Cari barang berstok rendah..."
+                value={gudangSearch}
+                onChangeText={setGudangSearch}
+                style={{ flex: 1, fontSize: 12, color: "#334155", paddingVertical: 0 }}
+                placeholderTextColor="#94A3B8"
+              />
+              {!!gudangSearch && (
+                <TouchableOpacity onPress={() => setGudangSearch("")}>
+                  <Ionicons name="close-circle" size={14} color="#CBD5E1" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Group Preview: Critical / Action Items */}
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Barang Berstok Rendah</Text>
+            <View style={{ marginBottom: 16 }}>
+              {(() => {
+                const filtered = priorityItems.filter(item => 
+                  item.name.toLowerCase().includes(gudangSearch.toLowerCase())
+                );
+                
+                if (filtered.length > 0) {
+                  return filtered.map((item, index) => {
+                    let iconName = "cube-outline";
+                    let iconBg = "#F8FAFC";
+                    let iconColor = "#64748B";
+                    const lowerName = item.name.toLowerCase();
+                    
+                    if (lowerName.includes("minyak")) {
+                      iconName = "water";
+                      iconBg = "#FEF3C7";
+                      iconColor = "#D97706";
+                    } else if (lowerName.includes("kardus") || lowerName.includes("kemasan")) {
+                      iconName = "cube-outline";
+                      iconBg = "#FFEDD5";
+                      iconColor = "#EA580C";
+                    } else if (lowerName.includes("pita") || lowerName.includes("perekat")) {
+                      iconName = "cut-outline";
+                      iconBg = "#F3E8FF";
+                      iconColor = "#7C3AED";
+                    }
+
+                    return (
+                      <TouchableOpacity
+                        key={item.id || index}
+                        activeOpacity={0.7}
+                        onPress={() => navigation.navigate("ItemDetail", { itemId: item.id, onDone: load })}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          paddingVertical: 10,
+                          borderBottomWidth: index === filtered.length - 1 ? 0 : 1,
+                          borderBottomColor: "#F8FAFC",
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                          <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: "center", justifyContent: "center" }}>
+                            <Ionicons name={iconName} size={16} color={iconColor} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: "600", color: "#334155" }} numberOfLines={1}>{item.name}</Text>
+                            {item.stock <= 5 && (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 }}>
+                                <Ionicons name="warning" size={10} color="#EF4444" />
+                                <Text style={{ fontSize: 9, fontWeight: "700", color: "#EF4444" }}>
+                                  Stok kritis! Tinggal {item.stock} pcs
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#EF4444" }}>
+                          {item.stock} Unit
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  });
+                }
+                
+                return (
+                  <View style={{ paddingVertical: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#F8FAFC", borderRadius: 12 }}>
+                    <Ionicons name="checkmark-circle-outline" size={24} color="#0D9488" style={{ marginBottom: 4 }} />
+                    <Text style={{ color: "#94A3B8", fontSize: 12, fontWeight: "500" }}>
+                      {gudangSearch.trim() ? "Tidak ada hasil pencarian." : "Semua stok barang aman."}
+                    </Text>
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* Group Actions */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("Barang")}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#0D9488",
+                  backgroundColor: "#fff",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#0D9488", fontWeight: "600", fontSize: 13 }}>Lihat Gudang</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("History")}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0D9488",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Riwayat Stok</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={{ gap: 16 }}>
-            {activeTabSections.map((section, index) => (
-              <React.Fragment key={`${activeTab}-section-${index}`}>{section}</React.Fragment>
-            ))}
+          {/* Group 2: Logistik & PO */}
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 20,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.03,
+              shadowRadius: 10,
+              elevation: 1,
+            }}
+          >
+            {/* Group Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: "#F0F9FF", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="document-text-outline" size={20} color="#0284C7" />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>Logistik & Purchase Order</Text>
+            </View>
+
+            {/* Group Stats (3-Row Grid) */}
+            <View style={{ borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 16, marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="receipt-outline" size={12} color="#0284C7" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total PO</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                    {formatNumberValue(metrics.poCount)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#F1F5F9", paddingLeft: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="time-outline" size={12} color="#0EA5E9" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Diproses (Sent)</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0EA5E9", marginTop: 4 }}>
+                    {formatNumberValue(metrics.poProgress)}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="checkmark-circle-outline" size={12} color="#10B981" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Diterima (Done)</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#10B981", marginTop: 4 }}>
+                    {formatNumberValue(metrics.poDone)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#F1F5F9", paddingLeft: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="cart-outline" size={12} color="#F59E0B" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total Belanja</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                    {formatCurrencyValue(metrics.poTotalValue)}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="trending-up-outline" size={12} color="#0EA5E9" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Estimasi Profit</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#0EA5E9", marginTop: 4 }}>
+                    {formatCurrencyValue(metrics.poProgressProfit)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#F1F5F9", paddingLeft: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="wallet-outline" size={12} color="#10B981" />
+                    <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total Profit</Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#10B981", marginTop: 4 }}>
+                    {formatCurrencyValue(metrics.poDoneProfit)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Group Search Input */}
+            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, height: 32, marginBottom: 12 }}>
+              <Ionicons name="search-outline" size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+              <TextInput
+                placeholder="Cari supplier atau ID PO..."
+                value={poSearch}
+                onChangeText={setPoSearch}
+                style={{ flex: 1, fontSize: 12, color: "#334155", paddingVertical: 0 }}
+                placeholderTextColor="#94A3B8"
+              />
+              {!!poSearch && (
+                <TouchableOpacity onPress={() => setPoSearch("")}>
+                  <Ionicons name="close-circle" size={14} color="#CBD5E1" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Group Preview: Last PO */}
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Purchase Order Terbaru</Text>
+            <View style={{ marginBottom: 16 }}>
+              {(() => {
+                const filtered = recentPOs.filter(po => 
+                  (po.supplierName || "").toLowerCase().includes(poSearch.toLowerCase()) || 
+                  `po-w2026-${String(po.id).padStart(3, "0")}`.includes(poSearch.toLowerCase())
+                );
+
+                if (filtered.length > 0) {
+                  const displayList = filtered.slice(0, 3);
+                  return (
+                    <View style={{ backgroundColor: "#F8FAFC", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2 }}>
+                      {displayList.map((po, index) => {
+                        let badgeText = "Pending";
+                        let badgeBg = "#FEF3C7";
+                        let badgeColor = "#B45309";
+
+                        if (po.status === "DONE") {
+                          badgeText = "Diterima";
+                          badgeBg = "#E6F4EA";
+                          badgeColor = "#0D9488";
+                        } else if (po.status === "PROGRESS") {
+                          badgeText = "Sent";
+                          badgeBg = "#E0F2FE";
+                          badgeColor = "#0284C7";
+                        } else if (po.status === "CANCELLED") {
+                          badgeText = "Batal";
+                          badgeBg = "#FEE2E2";
+                          badgeColor = "#EF4444";
+                        }
+
+                        return (
+                          <TouchableOpacity
+                            key={po.id || index}
+                            activeOpacity={0.7}
+                            onPress={() => navigation.navigate("PurchaseOrderDetail", { orderId: po.id, onDone: load })}
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              paddingVertical: 10,
+                              borderBottomWidth: index === displayList.length - 1 ? 0 : 1,
+                              borderBottomColor: "#E2E8F0",
+                            }}
+                          >
+                            <View style={{ flex: 1, paddingRight: 8 }}>
+                              <Text style={{ fontSize: 13, fontWeight: "700", color: "#334155" }}>
+                                {`PO-W2026-${String(po.id).padStart(3, "0")}`}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }} numberOfLines={1}>
+                                {po.supplierName || "Tanpa Supplier"}
+                              </Text>
+                            </View>
+                            <View style={{ alignItems: "flex-end", gap: 6 }}>
+                              <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: badgeColor }}>{badgeText}</Text>
+                              </View>
+                              <Text style={{ fontSize: 12, fontWeight: "700", color: "#334155" }}>
+                                {formatCurrencyValue(po.totalValue)}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  );
+                }
+                
+                return (
+                  <View style={{ paddingVertical: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#F8FAFC", borderRadius: 12 }}>
+                    <Ionicons name="cart-outline" size={24} color="#0284C7" style={{ marginBottom: 4 }} />
+                    <Text style={{ color: "#94A3B8", fontSize: 12, fontWeight: "500" }}>
+                      {poSearch.trim() ? "Tidak ada hasil pencarian." : "Belum ada PO tercatat."}
+                    </Text>
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* Group Actions */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("AddPurchaseOrder", { onDone: load })}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#0284C7",
+                  backgroundColor: "#fff",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#0284C7", fontWeight: "600", fontSize: 13 }}>Tambah PO</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("PO")}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0284C7",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Kelola PO</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Group 3: Keuangan & Pembukuan */}
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 20,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              shadowColor: "#0F172A",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.03,
+              shadowRadius: 10,
+              elevation: 1,
+            }}
+          >
+            {/* Group Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: "#FFF7ED", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="wallet-outline" size={20} color="#EA580C" />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>Keuangan & Buku Kas</Text>
+            </View>
+
+            {/* Group Stats (2 Columns - Profit Removed) */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 16, marginBottom: 16 }}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="book-outline" size={12} color="#EA580C" />
+                  <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Catatan Kas</Text>
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                  {formatNumberValue(metrics.bookkeepingCount)}
+                </Text>
+              </View>
+              <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#F1F5F9", paddingLeft: 20 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="wallet-outline" size={12} color="#16A34A" />
+                  <Text style={{ fontSize: 10, fontWeight: "600", color: "#94A3B8", textTransform: "uppercase" }}>Total Saldo</Text>
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", marginTop: 4 }}>
+                  {formatCurrencyValue(metrics.bookkeepingTotal)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Group Search Input */}
+            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, height: 32, marginBottom: 12 }}>
+              <Ionicons name="search-outline" size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+              <TextInput
+                placeholder="Cari transaksi kas..."
+                value={kasSearch}
+                onChangeText={setKasSearch}
+                style={{ flex: 1, fontSize: 12, color: "#334155", paddingVertical: 0 }}
+                placeholderTextColor="#94A3B8"
+              />
+              {!!kasSearch && (
+                <TouchableOpacity onPress={() => setKasSearch("")}>
+                  <Ionicons name="close-circle" size={14} color="#CBD5E1" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Group Preview: Last Kas Entry */}
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Transaksi Terakhir</Text>
+            <View style={{ marginBottom: 16 }}>
+              {(() => {
+                const filtered = recentBookkeeping.filter(entry => 
+                  entry.name.toLowerCase().includes(kasSearch.toLowerCase())
+                );
+
+                if (filtered.length > 0) {
+                  const displayList = filtered.slice(0, 3);
+                  return (
+                    <View style={{ backgroundColor: "#F8FAFC", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2 }}>
+                      {displayList.map((entry, index) => {
+                        const isExpense = entry.amount < 0;
+                        return (
+                          <TouchableOpacity
+                            key={entry.id || index}
+                            activeOpacity={0.7}
+                            onPress={() => navigation.navigate("BookkeepingDetail", { entryId: entry.id })}
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              paddingVertical: 10,
+                              borderBottomWidth: index === displayList.length - 1 ? 0 : 1,
+                              borderBottomColor: "#E2E8F0",
+                            }}
+                          >
+                            <View style={{ flex: 1, paddingRight: 8 }}>
+                              <Text style={{ fontSize: 13, fontWeight: "700", color: "#334155" }} numberOfLines={1}>
+                                {entry.name}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                                {formatDateDisplay(entry.entryDate)}
+                              </Text>
+                            </View>
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontWeight: "700",
+                                color: isExpense ? "#EF4444" : "#16A34A",
+                              }}
+                            >
+                               {isExpense ? "" : "+"}{formatCurrencyValue(entry.amount)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  );
+                }
+                
+                return (
+                  <View style={{ paddingVertical: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#F8FAFC", borderRadius: 12 }}>
+                    <Ionicons name="wallet-outline" size={24} color="#EA580C" style={{ marginBottom: 4 }} />
+                    <Text style={{ color: "#94A3B8", fontSize: 12, fontWeight: "500" }}>
+                      {kasSearch.trim() ? "Tidak ada hasil pencarian." : "Belum ada transaksi kas."}
+                    </Text>
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* Group Actions */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("AddBookkeeping")}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#EA580C",
+                  backgroundColor: "#fff",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#EA580C", fontWeight: "600", fontSize: 13 }}>Catat Kas</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("Pembukuan")}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#EA580C",
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Kelola Kas</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </ScrollView>
+
       <Modal visible={detailModal.visible} transparent animationType="fade" onRequestClose={closeDetail} statusBarTranslucent>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.35)", padding: 16 }} onPress={closeDetail}>
           {renderDetailModalBody()}
+        </Pressable>
+      </Modal>
+
+      <Modal visible={storeNameModalVisible} transparent animationType="fade" onRequestClose={() => setStoreNameModalVisible(false)} statusBarTranslucent>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(15,23,42,0.55)", justifyContent: "center", padding: 20 }} onPress={() => setStoreNameModalVisible(false)}>
+          <Pressable style={{ backgroundColor: "#fff", borderRadius: 20, padding: 20, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 16, elevation: 6 }} onPress={e => e.stopPropagation()}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Ubah Nama Toko / Gudang</Text>
+              <TouchableOpacity onPress={() => setStoreNameModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: "#64748B", fontSize: 13, marginBottom: 16 }}>
+              Masukkan nama toko atau gudang Anda untuk ditampilkan di halaman beranda.
+            </Text>
+            <TextInput
+              placeholder="Nama Toko / Gudang"
+              value={tempStoreName}
+              onChangeText={setTempStoreName}
+              style={{
+                backgroundColor: "#F1F5F9",
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 48,
+                fontSize: 15,
+                color: "#0F172A",
+                marginBottom: 20,
+              }}
+              placeholderTextColor="#94A3B8"
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => setStoreNameModalVisible(false)}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#F1F5F9",
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ color: "#475569", fontWeight: "700" }}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveStoreName}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0D9488",
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Simpan</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </SafeAreaView>

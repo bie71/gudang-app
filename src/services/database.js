@@ -72,12 +72,25 @@ export async function ensureDbReady() {
         "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
         "FOREIGN KEY(entry_id) REFERENCES bookkeeping_entries(id) ON DELETE CASCADE" +
         ");";
+      const createCalculatorSql =
+        "CREATE TABLE IF NOT EXISTS calculator_entries (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "item_name TEXT NOT NULL," +
+        "base_price INTEGER NOT NULL DEFAULT 0," +
+        "shipping_fee INTEGER NOT NULL DEFAULT 0," +
+        "tax_fee INTEGER NOT NULL DEFAULT 0," +
+        "other_fee INTEGER NOT NULL DEFAULT 0," +
+        "total_price INTEGER NOT NULL DEFAULT 0," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
+        ");";
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
       await db.execAsync(createPurchaseOrderSql);
       await db.execAsync(createPurchaseOrderItemsSql);
       await db.execAsync(createBookkeepingSql);
       await db.execAsync(createBookkeepingHistorySql);
+      await db.execAsync(createCalculatorSql);
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
       } catch (error) {
@@ -85,6 +98,11 @@ export async function ensureDbReady() {
       }
       try {
         await db.execAsync("ALTER TABLE items ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE calculator_entries ADD COLUMN items_json TEXT");
       } catch (error) {
         // column already exists
       }

@@ -22,6 +22,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
 import ActionButton from "../../components/ActionButton";
+import IconActionButton from "../../components/IconActionButton";
 import DatePickerField from "../../components/DatePickerField";
 import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
@@ -100,12 +101,30 @@ export function BookkeepingScreen({ navigation }) {
   const searchInitRef = useRef(false);
   const navigateToRoot = useCallback(
     (routeName, params) => {
-      const parent = typeof navigation.getParent === "function" ? navigation.getParent() : null;
-      if (parent?.navigate) parent.navigate(routeName, params);
-      else navigation.navigate(routeName, params);
+      navigation.navigate(routeName, params);
     },
     [navigation],
   );
+
+  const handleDeleteEntry = useCallback((entryId) => {
+    Alert.alert("Hapus Catatan Pembukuan", "Yakin ingin menghapus catatan pembukuan ini?", [
+      { text: "Batal", style: "cancel" },
+      {
+        text: "Hapus",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await exec(`DELETE FROM bookkeeping_entries WHERE id = ?`, [entryId]);
+            loadEntries({ search: searchTerm, reset: true });
+            loadSummary();
+          } catch (error) {
+            console.log("DELETE BOOKKEEPING ENTRY ERROR:", error);
+            Alert.alert("Gagal", "Catatan tidak dapat dihapus.");
+          }
+        },
+      },
+    ]);
+  }, [searchTerm]);
 
   useEffect(() => {
     loadEntries({ search: searchTerm, reset: true });
@@ -531,35 +550,74 @@ export function BookkeepingScreen({ navigation }) {
         </View>
       </TouchableOpacity>
       <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
+        {/* Lihat Detail Button */}
         <TouchableOpacity
-          onPress={() => openAdjustModal(item, "ADD")}
           activeOpacity={0.7}
+          onPress={() =>
+            navigateToRoot("BookkeepingDetail", {
+              entryId: item.id,
+              initialEntry: item,
+            })
+          }
           style={{
-            flex: 1,
-            paddingVertical: 10,
-            borderRadius: 12,
+            flex: 1.5,
             borderWidth: 1,
-            borderColor: "#22C55E",
+            borderColor: "#EA580C",
+            borderRadius: 10,
+            paddingVertical: 8,
             alignItems: "center",
-            backgroundColor: "#F0FDF4",
+            justifyContent: "center",
+            backgroundColor: "#fff",
           }}
         >
-          <Text style={{ color: "#15803D", fontWeight: "600" }}>+ Tambah</Text>
+          <Text style={{ color: "#EA580C", fontSize: 13, fontWeight: "600" }}>Lihat Detail</Text>
         </TouchableOpacity>
+
+        {/* Tambah Button */}
         <TouchableOpacity
-          onPress={() => openAdjustModal(item, "SUBTRACT")}
           activeOpacity={0.7}
+          onPress={() => openAdjustModal(item, "ADD")}
           style={{
-            flex: 1,
-            paddingVertical: 10,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: "#F87171",
+            width: 44,
+            borderRadius: 10,
+            backgroundColor: "#10B981",
             alignItems: "center",
-            backgroundColor: "#FEF2F2",
+            justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#DC2626", fontWeight: "600" }}>- Kurangi</Text>
+          <Ionicons name="add" size={18} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Kurangi Button */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => openAdjustModal(item, "SUBTRACT")}
+          style={{
+            width: 44,
+            borderRadius: 10,
+            backgroundColor: "#EF4444",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="remove" size={18} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Hapus Button */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => handleDeleteEntry(item.id)}
+          style={{
+            width: 44,
+            borderRadius: 10,
+            backgroundColor: "#F1F5F9",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="trash-outline" size={18} color="#EF4444" />
         </TouchableOpacity>
       </View>
     </View>
@@ -601,10 +659,65 @@ export function BookkeepingScreen({ navigation }) {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <View style={{ flex: 1, padding: 16 }}>
-        <Text style={{ fontSize: 22, fontWeight: "700", color: "#0F172A", marginBottom: 12 }}>Pembukuan</Text>
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
+      {/* Dark Header Container */}
+      <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 20 }}>
+        {/* Header row */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate("Dashboard");
+              }
+            }}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: "rgba(255, 255, 255, 0.15)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: "#fff" }}>Pembukuan</Text>
+        </View>
 
+        {/* Search bar inside header */}
+        <View
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 12,
+            height: 46,
+          }}
+        >
+          <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Cari nama atau catatan…"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            style={{
+              flex: 1,
+              color: "#0F172A",
+              fontSize: 14,
+              height: "100%",
+              paddingVertical: 0,
+            }}
+            placeholderTextColor="#94A3B8"
+          />
+        </View>
+      </View>
+
+      {/* Main Content Area */}
+      <View style={{ flex: 1, backgroundColor: "#F8FAFC", paddingHorizontal: 16, paddingTop: 16 }}>
+        {/* Summary Cards */}
         <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
           <View
             style={{
@@ -650,33 +763,17 @@ export function BookkeepingScreen({ navigation }) {
           </View>
         </View>
 
-        <TextInput
-          placeholder="Cari nama atau catatan…"
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          style={{
-            backgroundColor: "#fff",
-            borderWidth: 1,
-            borderColor: "#F1F5F9",
-            borderRadius: 16,
-            paddingHorizontal: 16,
-            height: 48,
-            fontSize: 15,
-            color: "#0F172A",
-            marginBottom: 12,
-          }}
-          placeholderTextColor="#94A3B8"
-        />
-
+        {/* Report Buttons */}
         <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
           <TouchableOpacity
             onPress={openReportModal}
             activeOpacity={0.7}
             style={{
+              flex: 1,
               flexDirection: "row",
               alignItems: "center",
+              justifyContent: "center",
               backgroundColor: "#0EA5E9",
-              paddingHorizontal: 16,
               borderRadius: 14,
               height: 46,
               shadowColor: "#0EA5E9",
@@ -694,10 +791,11 @@ export function BookkeepingScreen({ navigation }) {
             disabled={csvExporting}
             activeOpacity={0.7}
             style={{
+              flex: 1,
               flexDirection: "row",
               alignItems: "center",
+              justifyContent: "center",
               backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
-              paddingHorizontal: 16,
               borderRadius: 14,
               height: 46,
               shadowColor: csvExporting ? "transparent" : "#16A34A",
@@ -714,29 +812,6 @@ export function BookkeepingScreen({ navigation }) {
             )}
             <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>CSV</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() =>
-              navigateToRoot("AddBookkeeping", {
-              })
-            }
-            activeOpacity={0.7}
-            style={{
-              flex: 1,
-              backgroundColor: "#2563EB",
-              paddingHorizontal: 16,
-              borderRadius: 14,
-              alignItems: "center",
-              justifyContent: "center",
-              height: 46,
-              shadowColor: "#2563EB",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.15,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>+ Pembukuan</Text>
-          </TouchableOpacity>
         </View>
 
         <FlatList
@@ -750,25 +825,26 @@ export function BookkeepingScreen({ navigation }) {
           ListFooterComponent={
             loadingMore ? (
               <View style={{ paddingVertical: 16 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#EA580C" />
               </View>
             ) : null
           }
           ListEmptyComponent={
             loading ? (
               <View style={{ paddingVertical: 40 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#EA580C" />
               </View>
             ) : (
               <View style={{ paddingVertical: 40, alignItems: "center" }}>
-                <Ionicons name="document-text-outline" size={32} color="#CBD5F5" />
+                <Ionicons name="wallet-outline" size={48} color="#CBD5E1" />
                 <Text style={{ color: "#94A3B8", marginTop: 8 }}>
                   {searchTerm.trim() ? "Tidak ada catatan yang cocok." : "Belum ada catatan pembukuan."}
                 </Text>
               </View>
             )
           }
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ paddingBottom: 80 }}
+          showsVerticalScrollIndicator={false}
         />
       </View>
 
@@ -953,25 +1029,62 @@ export function BookkeepingScreen({ navigation }) {
               onChange={value => setReportModalState(prev => ({ ...prev, endDate: value }))}
             />
           </View>
-          <TouchableOpacity
-            onPress={handleGenerateReport}
-            disabled={reportGenerating}
-            style={{
-              marginTop: 12,
-              backgroundColor: reportGenerating ? "#93C5FD" : "#2563EB",
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
-          >
-            {reportGenerating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Generate PDF</Text>
-            )}
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={handleGenerateReport}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: reportGenerating ? "#FFD8A8" : "#EA580C",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor PDF</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: csvExporting ? "#A7F3D0" : "#10B981",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {csvExporting ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor Excel (CSV)</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() =>
+          navigateToRoot("AddBookkeeping")
+        }
+        style={{
+          position: "absolute",
+          bottom: 20,
+          right: 20,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: "#0D9488",
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#0D9488",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -1596,21 +1709,46 @@ export function BookkeepingDetailScreen({ route, navigation }) {
           style={{
             flexDirection: "row",
             flexWrap: "wrap",
-            gap: 12,
-            rowGap: 12,
+            gap: 16,
+            rowGap: 18,
             marginBottom: 20,
           }}
         >
-          <ActionButton
-            label="Laporan PNG"
+          <IconActionButton
+            icon="image-outline"
+            label="PNG"
+            backgroundColor="#E0F2FE"
+            iconColor="#0284C7"
             onPress={handleGenerateReportImage}
-            color="#0EA5E9"
-            loading={reportGenerating}
           />
-          <ActionButton label="Tambah Nominal" onPress={() => openAdjustModal("ADD")} color="#16A34A" />
-          <ActionButton label="Kurangi Nominal" onPress={() => openAdjustModal("SUBTRACT")} color="#F97316" />
-          <ActionButton label="Edit" onPress={handleEdit} color="#2563EB" />
-          <ActionButton label="Hapus" onPress={confirmDelete} color="#E11D48" />
+          <IconActionButton
+            icon="add-circle-outline"
+            label="+ Nominal"
+            backgroundColor="#DCFCE7"
+            iconColor="#15803D"
+            onPress={() => openAdjustModal("ADD")}
+          />
+          <IconActionButton
+            icon="remove-circle-outline"
+            label="- Nominal"
+            backgroundColor="#FEE2E2"
+            iconColor="#DC2626"
+            onPress={() => openAdjustModal("SUBTRACT")}
+          />
+          <IconActionButton
+            icon="create-outline"
+            label="Edit"
+            backgroundColor="#E0E7FF"
+            iconColor="#4338CA"
+            onPress={handleEdit}
+          />
+          <IconActionButton
+            icon="trash-outline"
+            label="Hapus"
+            backgroundColor="#FFE4E6"
+            iconColor="#E11D48"
+            onPress={confirmDelete}
+          />
         </View>
         <View
           style={{

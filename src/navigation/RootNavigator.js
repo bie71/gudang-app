@@ -9,6 +9,7 @@ import {
   PurchaseOrderDetailScreen,
 } from "../screens/purchaseOrders";
 import { AddBookkeepingScreen, BookkeepingDetailScreen, BookkeepingHistoryScreen } from "../screens/bookkeeping";
+import HistoryScreen from "../screens/HistoryScreen";
 import DataManagementScreen from "../screens/DataManagementScreen";
 
 const Stack = createNativeStackNavigator();
@@ -17,6 +18,7 @@ export default function RootNavigator() {
   return (
     <Stack.Navigator>
       <Stack.Screen name="Tabs" component={TabsNavigator} options={{ headerShown: false }} />
+      <Stack.Screen name="History" component={HistoryScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ItemDetail" component={ItemDetailScreen} options={{ title: "Detail Barang" }} />
       <Stack.Screen name="AddItem" component={AddItemScreen} options={{ title: "Tambah Barang" }} />
       <Stack.Screen name="StockMove" component={StockMoveScreen} options={{ title: "Pergerakan Stok" }} />

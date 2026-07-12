@@ -174,6 +174,40 @@ export function PurchaseOrdersScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, searchTerm]);
 
+  const handleUpdateStatus = useCallback(async (orderId, nextStatus) => {
+    const completedAtValue = nextStatus === "DONE" ? new Date().toISOString() : null;
+    try {
+      await exec(`UPDATE purchase_orders SET status = ?, completed_at = ? WHERE id = ?`, [
+        nextStatus,
+        completedAtValue,
+        orderId,
+      ]);
+      loadOrders({ search: searchTerm, reset: true });
+    } catch (error) {
+      console.log("PO LIST UPDATE STATUS ERROR:", error);
+      Alert.alert("Gagal", "Status tidak dapat diperbarui.");
+    }
+  }, [searchTerm]);
+
+  const handleDeleteOrder = useCallback(async (orderId) => {
+    Alert.alert("Hapus Purchase Order", "Yakin ingin menghapus purchase order ini?", [
+      { text: "Batal", style: "cancel" },
+      {
+        text: "Hapus",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await exec(`DELETE FROM purchase_orders WHERE id = ?`, [orderId]);
+            loadOrders({ search: searchTerm, reset: true });
+          } catch (error) {
+            console.log("PO LIST DELETE ERROR:", error);
+            Alert.alert("Gagal", "Purchase order tidak dapat dihapus.");
+          }
+        },
+      },
+    ]);
+  }, [searchTerm]);
+
   async function loadOrders({ search = searchTerm, reset = false, mode = "default" } = {}) {
     const normalizedSearch = (search || "").trim().toLowerCase();
     const isSearchChanged = normalizedSearch !== pagingRef.current.search;
@@ -615,130 +649,261 @@ export function PurchaseOrdersScreen({ navigation }) {
   }, [csvExporting]);
 
   const renderItem = ({ item }) => {
-    const statusStyle = getPOStatusStyle(item.status);
+    let badgeText = "Pending";
+    let badgeBg = "#FEF3C7";
+    let badgeColor = "#B45309";
+    let dotColor = "#F59E0B";
+
+    if (item.status === "DONE") {
+      badgeText = "Diterima";
+      badgeBg = "#E6F4EA";
+      badgeColor = "#0D9488";
+      dotColor = "#0D9488";
+    } else if (item.status === "PROGRESS") {
+      badgeText = "Sent";
+      badgeBg = "#E0F2FE";
+      badgeColor = "#0284C7";
+      dotColor = "#0284C7";
+    } else if (item.status === "CANCELLED") {
+      badgeText = "Batal";
+      badgeBg = "#FEE2E2";
+      badgeColor = "#EF4444";
+      dotColor = "#EF4444";
+    }
+
     const totalValue = item.totalValue ?? 0;
-    const totalQuantity = item.totalQuantity ?? 0;
-    const itemsCount = item.itemsCount ?? (item.primaryItemName ? 1 : 0);
-    const quantityLabel = formatNumberValue(totalQuantity);
-    const itemsLabel = formatNumberValue(itemsCount || (totalQuantity > 0 ? 1 : 0));
+
+    const formatPOValue = (val) => {
+      if (val >= 1000000) {
+        const jt = val / 1000000;
+        return `Rp ${jt % 1 === 0 ? jt.toFixed(0) : jt.toFixed(1).replace(".", ",")}Jt`;
+      }
+      return formatCurrencyValue(val);
+    };
+
+    const formatPODate = (dateStr) => {
+      if (!dateStr) return "-";
+      const date = new Date(dateStr);
+      if (Number.isNaN(date.getTime())) return dateStr;
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yy = String(date.getFullYear()).slice(-2);
+      return `${dd}/${mm}/${yy}`;
+    };
+
     return (
-      <TouchableOpacity
-        onPress={() =>
-          navigation.navigate("PurchaseOrderDetail", {
-            orderId: item.id,
-            onDone: () => loadOrders({ search: searchTerm, reset: true }),
-          })
-        }
-        style={{ backgroundColor: "#fff", padding: 16, borderRadius: 14, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 12 }}
+      <View
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: "#F1F5F9",
+          padding: 16,
+          marginBottom: 12,
+          shadowColor: "#0F172A",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.03,
+          shadowRadius: 10,
+          elevation: 1,
+        }}
       >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <Text
-            style={{
-              fontWeight: "700",
-              fontSize: 16,
-              color: "#0F172A",
-              flexGrow: 1,
-              flexShrink: 1,
-              minWidth: 0,
-              marginRight: 12,
-            }}
-          >
-            {item.itemName}
+        {/* Card Top Row */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A" }}>
+            {`PO-W2026-${String(item.id).padStart(3, "0")}`}
           </Text>
-          <View
+          <View style={{ backgroundColor: badgeBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: badgeColor }}>{badgeText}</Text>
+          </View>
+        </View>
+
+        {/* Card Middle Content */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: "500", color: "#64748B" }}>
+              {item.supplierName || "Tanpa Supplier"}
+            </Text>
+            {/* Status dot + text */}
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginRight: 6 }} />
+              <Text style={{ fontSize: 12, color: "#64748B" }}>
+                {item.status === "DONE" ? "Diterima" : item.status === "PROGRESS" ? "Pending" : "Dibatalkan"}
+              </Text>
+            </View>
+          </View>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>
+              {formatPOValue(totalValue)}
+            </Text>
+            <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
+              {formatPODate(item.orderDate)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Card Action Buttons */}
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+          {/* Lihat Detail Button */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() =>
+              navigation.navigate("PurchaseOrderDetail", {
+                orderId: item.id,
+                onDone: () => loadOrders({ search: searchTerm, reset: true }),
+              })
+            }
             style={{
-              backgroundColor: statusStyle.background,
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 999,
-              alignSelf: "flex-start",
-              marginTop: 2,
+              flex: 1.5,
+              borderWidth: 1,
+              borderColor: "#0D9488",
+              borderRadius: 10,
+              paddingVertical: 8,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#fff",
             }}
           >
-            <Text style={{ fontSize: 12, fontWeight: "600", color: statusStyle.color }}>{statusStyle.label}</Text>
-          </View>
+            <Text style={{ color: "#0D9488", fontSize: 13, fontWeight: "600" }}>Lihat Detail</Text>
+          </TouchableOpacity>
+
+          {/* Done Button (only show if status is not DONE) */}
+          {item.status !== "DONE" && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => handleUpdateStatus(item.id, "DONE")}
+              style={{
+                width: 44,
+                borderRadius: 10,
+                backgroundColor: "#10B981",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="checkmark-done" size={18} color="#fff" />
+            </TouchableOpacity>
+          )}
+
+          {/* Cancel Button (only show if status is PROGRESS) */}
+          {item.status === "PROGRESS" && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => handleUpdateStatus(item.id, "CANCELLED")}
+              style={{
+                width: 44,
+                borderRadius: 10,
+                backgroundColor: "#EF4444",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
+          )}
+
+          {/* PNG Button */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() =>
+              navigation.navigate("PurchaseOrderDetail", {
+                orderId: item.id,
+                autoExportPng: true,
+                onDone: () => loadOrders({ search: searchTerm, reset: true }),
+              })
+            }
+            style={{
+              width: 44,
+              borderRadius: 10,
+              backgroundColor: "#0EA5E9",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="image-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+
+          {/* Hapus Button */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => handleDeleteOrder(item.id)}
+            style={{
+              width: 44,
+              borderRadius: 10,
+              backgroundColor: "#F1F5F9",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
         </View>
-        <Text style={{ color: "#64748B", marginTop: 4 }}>
-          {item.ordererName && item.ordererName.trim() ? item.ordererName : "Tanpa pemesan"}
-          {item.supplierName ? ` • ${item.supplierName}` : ""}
-        </Text>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
-          <Text style={{ color: "#0F172A", fontWeight: "600" }}>{formatDateDisplay(item.orderDate)}</Text>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontWeight: "700", color: "#0F172A" }}>{formatCurrencyValue(totalValue)}</Text>
-            <Text style={{ color: "#94A3B8", fontSize: 12 }}>{`${itemsLabel} barang • ${quantityLabel} pcs`}</Text>
-          </View>
-        </View>
-        {item.note ? <Text style={{ color: "#94A3B8", fontSize: 12, marginTop: 10 }}>{item.note}</Text> : null}
-      </TouchableOpacity>
+      </View>
     );
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <View style={{ padding: 16, flex: 1 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <Text style={{ fontSize: 20, fontWeight: "700", color: "#0F172A" }}>Purchase Order</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <TouchableOpacity
-              onPress={openReportModal}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#2563EB",
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 12,
-                gap: 6,
-              }}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#fff" />
-              <Text style={{ color: "#fff", fontWeight: "700" }}>PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleExportCsv}
-              disabled={csvExporting}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 12,
-                gap: 6,
-              }}
-            >
-              {csvExporting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
-              <Text style={{ color: "#fff", fontWeight: "700" }}>CSV</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("AddPurchaseOrder", {
-                  onDone: () => loadOrders({ search: searchTerm, reset: true }),
-                })
-              }
-              style={{ backgroundColor: "#14B8A6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>+ PO</Text>
-            </TouchableOpacity>
-          </View>
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
+      {/* Dark Header Container */}
+      <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 0 }}>
+        {/* Header row */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
+            Purchase Order
+          </Text>
         </View>
-        <TextInput
-          placeholder="Cari nama barang, pemasok, atau catatan..."
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          style={{
-            backgroundColor: "#fff",
-            borderWidth: 1,
-            borderColor: "#E5E7EB",
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 44,
-            marginBottom: 12,
-          }}
-        />
+      </View>
+
+      {/* Search and Filters container */}
+      <View style={{ backgroundColor: "#0F172A", paddingHorizontal: 20, paddingBottom: 20 }}>
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "#fff",
+              borderRadius: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 12,
+              height: 46,
+            }}
+          >
+            <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder="Search PO"
+              value={searchTerm}
+              onChangeText={setSearchTerm}
+              style={{
+                flex: 1,
+                color: "#0F172A",
+                fontSize: 14,
+                height: "100%",
+                paddingVertical: 0,
+              }}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          {/* Filter button - opens the report / export options */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={openReportModal}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 12,
+              backgroundColor: "rgba(255,255,255,0.15)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="funnel-outline" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Main Content Area */}
+      <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
         <FlatList
           data={orders}
           keyExtractor={item => String(item.id)}
@@ -747,17 +912,18 @@ export function PurchaseOrdersScreen({ navigation }) {
           onRefresh={handleRefresh}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
           ListFooterComponent={
             loadingMore ? (
               <View style={{ paddingVertical: 16 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#0D9488" />
               </View>
             ) : null
           }
           ListEmptyComponent={
             loading ? (
               <View style={{ paddingVertical: 40 }}>
-                <ActivityIndicator color="#2563EB" />
+                <ActivityIndicator color="#0D9488" />
               </View>
             ) : (
               <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -768,9 +934,36 @@ export function PurchaseOrdersScreen({ navigation }) {
               </View>
             )
           }
-          contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() =>
+          navigation.navigate("AddPurchaseOrder", {
+            onDone: () => loadOrders({ search: searchTerm, reset: true }),
+          })
+        }
+        style={{
+          position: "absolute",
+          bottom: 20,
+          right: 20,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: "#0D9488",
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#0D9488",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
 
       <Modal
         visible={reportModalState.visible}
@@ -821,19 +1014,34 @@ export function PurchaseOrdersScreen({ navigation }) {
               onChange={value => setReportModalState(prev => ({ ...prev, endDate: value }))}
             />
           </View>
-          <TouchableOpacity
-            onPress={handleGenerateReport}
-            disabled={reportGenerating}
-            style={{
-              marginTop: 12,
-              backgroundColor: reportGenerating ? "#93C5FD" : "#2563EB",
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: "center",
-            }}
-          >
-            {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Generate PDF</Text>}
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={handleGenerateReport}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: reportGenerating ? "#BAE6FD" : "#0284C7",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {reportGenerating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor PDF</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={reportGenerating || csvExporting}
+              style={{
+                flex: 1,
+                backgroundColor: csvExporting ? "#A7F3D0" : "#10B981",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              {csvExporting ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Ekspor Excel (CSV)</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1558,6 +1766,15 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       if (actionHintTimeout.current) clearTimeout(actionHintTimeout.current);
     };
   }, [orderId]);
+
+  useEffect(() => {
+    if (route.params?.autoExportPng && order && !loading) {
+      const timer = setTimeout(() => {
+        generateInvoiceImage();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [route.params?.autoExportPng, order, loading]);
 
   async function updateStatus(nextStatus) {
     const normalizedStatus = nextStatus || "PROGRESS";
