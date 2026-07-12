@@ -2,6 +2,7 @@ import React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import DashboardScreen from "../screens/DashboardScreen";
 import { ItemsScreen, AddItemScreen, ItemDetailScreen, StockMoveScreen } from "../screens/Items";
@@ -66,6 +67,8 @@ function PembukuanStackNavigator() {
 }
 
 export default function TabsNavigator() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -77,8 +80,8 @@ export default function TabsNavigator() {
           backgroundColor: "#fff", 
           borderTopWidth: 1,
           borderTopColor: "#F1F5F9",
-          height: 64,
-          paddingBottom: 8,
+          height: 64 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
           paddingTop: 8,
           shadowColor: "#0F172A",
           shadowOffset: { width: 0, height: -4 },
