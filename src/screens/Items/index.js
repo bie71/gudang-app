@@ -60,7 +60,7 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => map[char] || char);
 }
 
-export function ItemsScreen({ navigation }) {
+export function ItemsScreen({ route, navigation }) {
   const PAGE_SIZE = 20;
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -77,6 +77,13 @@ export function ItemsScreen({ navigation }) {
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    if (route?.params?.search !== undefined) {
+      setSearchTerm(route.params.search);
+      navigation.setParams({ search: undefined });
+    }
+  }, [route?.params?.search]);
 
   useEffect(() => {
     loadItems({ search: searchTerm, reset: true });
@@ -479,6 +486,22 @@ export function ItemsScreen({ navigation }) {
           <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
             Katalog Barang
           </Text>
+          <TouchableOpacity
+            onPress={openReportModal}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#0D9488",
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              height: 36,
+              gap: 6,
+            }}
+          >
+            <Ionicons name="document-text-outline" size={16} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Search & Actions Row */}
@@ -496,7 +519,7 @@ export function ItemsScreen({ navigation }) {
           >
             <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
             <TextInput
-              placeholder="Search"
+              placeholder="Cari nama barang atau kategori..."
               value={searchTerm}
               onChangeText={setSearchTerm}
               style={{
@@ -510,21 +533,7 @@ export function ItemsScreen({ navigation }) {
             />
           </View>
 
-          {/* Filter button - opens the report / export options */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={openReportModal}
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 12,
-              backgroundColor: "rgba(255,255,255,0.15)",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="funnel-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+
         </View>
       </View>
 
@@ -563,7 +572,15 @@ export function ItemsScreen({ navigation }) {
             }
 
             return (
-              <View
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  navigation.navigate("ItemDetail", {
+                    itemId: item.id,
+                    initialItem: item,
+                    onDone: () => loadItems({ search: searchTerm, reset: true }),
+                  })
+                }
                 style={{
                   backgroundColor: "#fff",
                   borderRadius: 16,
@@ -589,10 +606,11 @@ export function ItemsScreen({ navigation }) {
                     </Text>
                     <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
                       {lowerName.includes("minyak") ? "(SKU-MGS001)" : lowerName.includes("kardus") ? "(SKU001)" : lowerName.includes("pita") ? "(SKU-TPE002)" : `(SKU-00${item.id})`}
+                      {item.category ? ` • ${item.category}` : " • Tanpa Kategori"}
                     </Text>
                     <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
                       <Text style={{ fontSize: 13, fontWeight: "600", color: "#475569" }}>
-                        {formatNumberValue(item.stock)} Unit
+                        {formatNumberValue(item.stock)} pcs
                       </Text>
                       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginLeft: 8 }} />
                     </View>
@@ -712,7 +730,7 @@ export function ItemsScreen({ navigation }) {
                     <Ionicons name="trash-outline" size={18} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           }}
           refreshing={refreshing}

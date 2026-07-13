@@ -46,7 +46,7 @@ export async function exportItemsCsv() {
     `
       SELECT id, name, category, price, cost_price, stock
       FROM items
-      ORDER BY name COLLATE NOCASE ASC
+      ORDER BY id ASC
     `,
   );
   const columns = [
@@ -85,7 +85,7 @@ export async function exportPurchaseOrdersCsv() {
         ) as order_total
       FROM purchase_orders po
       LEFT JOIN purchase_order_items items ON items.order_id = po.id
-      ORDER BY po.order_date DESC, po.id DESC, items.id ASC
+      ORDER BY po.id ASC, items.id ASC
     `,
   );
   const columns = [
@@ -127,7 +127,7 @@ export async function exportBookkeepingCsv() {
         h.created_at as change_created_at
       FROM bookkeeping_entries e
       LEFT JOIN bookkeeping_entry_history h ON h.entry_id = e.id
-      ORDER BY e.entry_date DESC, e.id DESC, h.id ASC
+      ORDER BY e.id ASC, h.id ASC
     `,
   );
   const columns = [
@@ -165,7 +165,7 @@ export async function exportStockHistoryCsv() {
         IFNULL(h.profit_amount, 0) as profit_amount
       FROM stock_history h
       LEFT JOIN items i ON i.id = h.item_id
-      ORDER BY h.created_at DESC, h.id DESC
+      ORDER BY h.id ASC
     `,
   );
   const columns = [

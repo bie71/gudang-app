@@ -134,7 +134,7 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => map[char] || char);
 }
 
-export function PurchaseOrdersScreen({ navigation }) {
+export function PurchaseOrdersScreen({ route, navigation }) {
   const PAGE_SIZE = 20;
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -151,6 +151,13 @@ export function PurchaseOrdersScreen({ navigation }) {
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
   const searchInitRef = useRef(false);
+
+  useEffect(() => {
+    if (route?.params?.search !== undefined) {
+      setSearchTerm(route.params.search);
+      navigation.setParams({ search: undefined });
+    }
+  }, [route?.params?.search]);
 
   useEffect(() => {
     loadOrders({ search: searchTerm, reset: true });
@@ -243,6 +250,7 @@ export function PurchaseOrdersScreen({ navigation }) {
             ? = ''
             OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
             OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.item_name,'')) LIKE ?
             OR LOWER(IFNULL(po.note,'')) LIKE ?
             OR EXISTS (
               SELECT 1
@@ -256,6 +264,7 @@ export function PurchaseOrdersScreen({ navigation }) {
         `,
         [
           normalizedSearch,
+          `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
@@ -692,7 +701,14 @@ export function PurchaseOrdersScreen({ navigation }) {
     };
 
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() =>
+          navigation.navigate("PurchaseOrderDetail", {
+            orderId: item.id,
+            onDone: () => loadOrders({ search: searchTerm, reset: true }),
+          })
+        }
         style={{
           backgroundColor: "#fff",
           borderRadius: 16,
@@ -720,8 +736,14 @@ export function PurchaseOrdersScreen({ navigation }) {
         {/* Card Middle Content */}
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={{ fontSize: 14, fontWeight: "500", color: "#64748B" }}>
-              {item.supplierName || "Tanpa Supplier"}
+            <Text style={{ fontSize: 13, fontWeight: "500", color: "#64748B" }}>
+              Pemasok: {item.supplierName || "Tanpa Supplier"}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: "500", color: "#64748B", marginTop: 2 }}>
+              Pemesan: {item.ordererName || "Tanpa Pemesan"}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: "#0F172A", marginTop: 4 }}>
+              {item.itemName}
             </Text>
             {/* Status dot + text */}
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
@@ -838,7 +860,7 @@ export function PurchaseOrdersScreen({ navigation }) {
             <Ionicons name="trash-outline" size={18} color="#EF4444" />
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -851,6 +873,22 @@ export function PurchaseOrdersScreen({ navigation }) {
           <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
             Purchase Order
           </Text>
+          <TouchableOpacity
+            onPress={openReportModal}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#0284C7",
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              height: 36,
+              gap: 6,
+            }}
+          >
+            <Ionicons name="document-text-outline" size={16} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -870,7 +908,7 @@ export function PurchaseOrdersScreen({ navigation }) {
           >
             <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
             <TextInput
-              placeholder="Search PO"
+              placeholder="Cari supplier, ID PO, atau barang..."
               value={searchTerm}
               onChangeText={setSearchTerm}
               style={{
@@ -884,21 +922,7 @@ export function PurchaseOrdersScreen({ navigation }) {
             />
           </View>
 
-          {/* Filter button - opens the report / export options */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={openReportModal}
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 12,
-              backgroundColor: "rgba(255,255,255,0.15)",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="funnel-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+
         </View>
       </View>
 

@@ -74,6 +74,9 @@ export default function DashboardScreen({ navigation }) {
   const [gudangSearch, setGudangSearch] = useState("");
   const [poSearch, setPoSearch] = useState("");
   const [kasSearch, setKasSearch] = useState("");
+  const [gudangSearchResults, setGudangSearchResults] = useState([]);
+  const [poSearchResults, setPoSearchResults] = useState([]);
+  const [kasSearchResults, setKasSearchResults] = useState([]);
   const [storeName, setStoreName] = useState("Budi (Warehouse Manager)");
   const [tempStoreName, setTempStoreName] = useState("");
   const [storeNameModalVisible, setStoreNameModalVisible] = useState(false);
@@ -594,6 +597,172 @@ export default function DashboardScreen({ navigation }) {
     return sorted.slice(-7);
   }, [recentBookkeeping]);
 
+  const gudangSearchRef = useRef("");
+  const poSearchRef = useRef("");
+  const kasSearchRef = useRef("");
+
+  useEffect(() => {
+    gudangSearchRef.current = gudangSearch;
+  }, [gudangSearch]);
+
+  useEffect(() => {
+    poSearchRef.current = poSearch;
+  }, [poSearch]);
+
+  useEffect(() => {
+    kasSearchRef.current = kasSearch;
+  }, [kasSearch]);
+
+  const fetchGudangSearch = useCallback(async (searchVal) => {
+    if (!searchVal.trim()) {
+      setGudangSearchResults([]);
+      return;
+    }
+    const cleanSearch = searchVal.trim().toLowerCase();
+    try {
+      const res = await exec(
+        `SELECT id, name, category, stock, price
+         FROM items
+         WHERE LOWER(name) LIKE ? OR LOWER(IFNULL(category, '')) LIKE ?
+         ORDER BY name ASC
+         LIMIT 50`,
+        [`%${cleanSearch}%`, `%${cleanSearch}%`]
+      );
+      const results = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        results.push({
+          id: row.id,
+          name: row.name,
+          category: row.category,
+          stock: Number(row.stock ?? 0),
+          price: Number(row.price ?? 0),
+        });
+      }
+      setGudangSearchResults(results);
+    } catch (err) {
+      console.log("Gudang search error:", err);
+    }
+  }, []);
+
+  const fetchPoSearch = useCallback(async (searchVal) => {
+    if (!searchVal.trim()) {
+      setPoSearchResults([]);
+      return;
+    }
+    const cleanSearch = searchVal.trim().toLowerCase();
+    const match = cleanSearch.match(/(?:po-w2026-)?(\d+)/);
+    const searchedId = match ? parseInt(match[1], 10) : null;
+    try {
+      const res = await exec(
+        `SELECT
+           po.id,
+           po.supplier_name,
+           po.orderer_name,
+           po.status,
+           po.order_date,
+           IFNULL(SUM(items.quantity), 0) as total_quantity,
+           IFNULL(SUM(items.quantity * items.price), 0) as total_value,
+           COUNT(items.id) as item_count,
+           COALESCE(
+             (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
+             ''
+           ) as primary_item_name,
+           (SELECT group_concat(name, ', ') FROM purchase_order_items WHERE order_id = po.id) as all_item_names
+         FROM purchase_orders po
+         LEFT JOIN purchase_order_items items ON items.order_id = po.id
+         WHERE
+           LOWER(IFNULL(po.supplier_name, '')) LIKE ?
+           OR LOWER(IFNULL(po.orderer_name, '')) LIKE ?
+           OR LOWER(IFNULL(po.item_name, '')) LIKE ?
+           OR po.id = ?
+           OR EXISTS (
+             SELECT 1 FROM purchase_order_items search_items
+             WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+           )
+         GROUP BY po.id
+         ORDER BY po.order_date DESC, po.id DESC
+         LIMIT 50`,
+        [
+          `%${cleanSearch}%`,
+          `%${cleanSearch}%`,
+          `%${cleanSearch}%`,
+          searchedId ?? -1,
+          `%${cleanSearch}%`
+        ]
+      );
+      const results = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        const itemCount = Number(row.item_count ?? 0);
+        const totalQuantity = Number(row.total_quantity ?? 0);
+        const totalValue = Number(row.total_value ?? 0);
+        const primaryItemName = row.primary_item_name || "";
+        const itemName = buildOrderItemLabel(primaryItemName, itemCount || (primaryItemName ? 1 : 0));
+        results.push({
+          id: row.id,
+          supplierName: row.supplier_name,
+          ordererName: row.orderer_name,
+          itemName,
+          primaryItemName,
+          allItemNames: row.all_item_names || "",
+          itemsCount: itemCount,
+          totalQuantity,
+          totalValue,
+          status: row.status,
+          orderDate: row.order_date,
+        });
+      }
+      setPoSearchResults(results);
+    } catch (err) {
+      console.log("PO search error:", err);
+    }
+  }, []);
+
+  const fetchKasSearch = useCallback(async (searchVal) => {
+    if (!searchVal.trim()) {
+      setKasSearchResults([]);
+      return;
+    }
+    const cleanSearch = searchVal.trim().toLowerCase();
+    try {
+      const res = await exec(
+        `SELECT id, name, amount, entry_date, note
+         FROM bookkeeping_entries
+         WHERE LOWER(name) LIKE ? OR LOWER(IFNULL(note, '')) LIKE ?
+         ORDER BY entry_date DESC, id DESC
+         LIMIT 50`,
+        [`%${cleanSearch}%`, `%${cleanSearch}%`]
+      );
+      const results = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        results.push({
+          id: row.id,
+          name: row.name,
+          amount: Number(row.amount ?? 0),
+          entryDate: row.entry_date,
+          note: row.note,
+        });
+      }
+      setKasSearchResults(results);
+    } catch (err) {
+      console.log("Kas search error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGudangSearch(gudangSearch);
+  }, [gudangSearch, fetchGudangSearch]);
+
+  useEffect(() => {
+    fetchPoSearch(poSearch);
+  }, [poSearch, fetchPoSearch]);
+
+  useEffect(() => {
+    fetchKasSearch(kasSearch);
+  }, [kasSearch, fetchKasSearch]);
+
   async function load() {
     try {
       setRefreshing(true);
@@ -679,7 +848,8 @@ export default function DashboardScreen({ navigation }) {
           COALESCE(
             (SELECT name FROM purchase_order_items first_items WHERE first_items.order_id = po.id ORDER BY first_items.id LIMIT 1),
             ''
-          ) as primary_item_name
+          ) as primary_item_name,
+          (SELECT group_concat(name, ', ') FROM purchase_order_items WHERE order_id = po.id) as all_item_names
         FROM purchase_orders po
         LEFT JOIN purchase_order_items items ON items.order_id = po.id
         GROUP BY po.id
@@ -794,6 +964,7 @@ export default function DashboardScreen({ navigation }) {
           ordererName: row.orderer_name,
           itemName,
           primaryItemName,
+          allItemNames: row.all_item_names || "",
           itemsCount: itemCount,
           totalQuantity,
           totalValue,
@@ -896,6 +1067,9 @@ export default function DashboardScreen({ navigation }) {
         inQtyToday,
         outQtyToday,
       });
+      if (gudangSearchRef.current) fetchGudangSearch(gudangSearchRef.current);
+      if (poSearchRef.current) fetchPoSearch(poSearchRef.current);
+      if (kasSearchRef.current) fetchKasSearch(kasSearchRef.current);
     } catch (error) {
       console.log("DASHBOARD LOAD ERROR:", error);
     } finally {
@@ -2553,11 +2727,15 @@ export default function DashboardScreen({ navigation }) {
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
-      <ScrollView
-        style={{ flex: 1, backgroundColor: "#F8FAFC" }}
-        contentContainerStyle={{ paddingBottom: 24 + tabBarHeight }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor="#fff" />}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          style={{ flex: 1, backgroundColor: "#F8FAFC" }}
+          contentContainerStyle={{ paddingBottom: 24 + tabBarHeight }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor="#fff" />}
+        >
         {/* Dark Header Container with Pemanis Header */}
         <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 28 }}>
           {/* Header row */}
@@ -2689,12 +2867,14 @@ export default function DashboardScreen({ navigation }) {
             </View>
 
             {/* Group Preview: Critical / Action Items */}
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Barang Berstok Rendah</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>
+              {gudangSearch.trim() ? "Hasil Pencarian Barang" : "Barang Berstok Rendah"}
+            </Text>
             <View style={{ marginBottom: 16 }}>
               {(() => {
-                const filtered = priorityItems.filter(item => 
-                  item.name.toLowerCase().includes(gudangSearch.toLowerCase())
-                );
+                const filtered = gudangSearch.trim()
+                  ? gudangSearchResults.slice(0, 5)
+                  : priorityItems;
                 
                 if (filtered.length > 0) {
                   return filtered.map((item, index) => {
@@ -2748,7 +2928,7 @@ export default function DashboardScreen({ navigation }) {
                           </View>
                         </View>
                         <Text style={{ fontSize: 13, fontWeight: "700", color: "#EF4444" }}>
-                          {item.stock} Unit
+                          {item.stock} pcs
                         </Text>
                       </TouchableOpacity>
                     );
@@ -2770,7 +2950,7 @@ export default function DashboardScreen({ navigation }) {
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate("Barang")}
+                onPress={() => navigation.navigate("Barang", { screen: "BarangMain", params: { search: gudangSearch } })}
                 style={{
                   flex: 1,
                   borderWidth: 1,
@@ -2892,7 +3072,7 @@ export default function DashboardScreen({ navigation }) {
             <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, height: 32, marginBottom: 12 }}>
               <Ionicons name="search-outline" size={14} color="#94A3B8" style={{ marginRight: 6 }} />
               <TextInput
-                placeholder="Cari supplier atau ID PO..."
+                placeholder="Cari supplier, ID PO, atau barang..."
                 value={poSearch}
                 onChangeText={setPoSearch}
                 style={{ flex: 1, fontSize: 12, color: "#334155", paddingVertical: 0 }}
@@ -2906,16 +3086,17 @@ export default function DashboardScreen({ navigation }) {
             </View>
 
             {/* Group Preview: Last PO */}
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Purchase Order Terbaru</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>
+              {poSearch.trim() ? "Hasil Pencarian PO" : "Purchase Order Terbaru"}
+            </Text>
             <View style={{ marginBottom: 16 }}>
               {(() => {
-                const filtered = recentPOs.filter(po => 
-                  (po.supplierName || "").toLowerCase().includes(poSearch.toLowerCase()) || 
-                  `po-w2026-${String(po.id).padStart(3, "0")}`.includes(poSearch.toLowerCase())
-                );
+                const filtered = poSearch.trim()
+                  ? poSearchResults
+                  : recentPOs;
 
                 if (filtered.length > 0) {
-                  const displayList = filtered.slice(0, 3);
+                  const displayList = poSearch.trim() ? filtered.slice(0, 5) : filtered.slice(0, 3);
                   return (
                     <View style={{ backgroundColor: "#F8FAFC", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2 }}>
                       {displayList.map((po, index) => {
@@ -2956,7 +3137,10 @@ export default function DashboardScreen({ navigation }) {
                                 {`PO-W2026-${String(po.id).padStart(3, "0")}`}
                               </Text>
                               <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }} numberOfLines={1}>
-                                {po.supplierName || "Tanpa Supplier"}
+                                Pemasok: {po.supplierName || "Tanpa Supplier"} • Pemesan: {po.ordererName || "-"}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: "#475569", marginTop: 2 }} numberOfLines={1}>
+                                {po.itemName || "Tanpa barang"}
                               </Text>
                             </View>
                             <View style={{ alignItems: "flex-end", gap: 6 }}>
@@ -3005,7 +3189,7 @@ export default function DashboardScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate("PO")}
+                onPress={() => navigation.navigate("PO", { screen: "POMain", params: { search: poSearch } })}
                 style={{
                   flex: 1,
                   backgroundColor: "#0284C7",
@@ -3083,15 +3267,17 @@ export default function DashboardScreen({ navigation }) {
             </View>
 
             {/* Group Preview: Last Kas Entry */}
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>Transaksi Terakhir</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 }}>
+              {kasSearch.trim() ? "Hasil Pencarian Transaksi" : "Transaksi Terakhir"}
+            </Text>
             <View style={{ marginBottom: 16 }}>
               {(() => {
-                const filtered = recentBookkeeping.filter(entry => 
-                  entry.name.toLowerCase().includes(kasSearch.toLowerCase())
-                );
+                const filtered = kasSearch.trim()
+                  ? kasSearchResults
+                  : recentBookkeeping;
 
                 if (filtered.length > 0) {
-                  const displayList = filtered.slice(0, 3);
+                  const displayList = kasSearch.trim() ? filtered.slice(0, 5) : filtered.slice(0, 3);
                   return (
                     <View style={{ backgroundColor: "#F8FAFC", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2 }}>
                       {displayList.map((entry, index) => {
@@ -3165,7 +3351,7 @@ export default function DashboardScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate("Pembukuan")}
+                onPress={() => navigation.navigate("Pembukuan", { screen: "PembukuanMain", params: { search: kasSearch } })}
                 style={{
                   flex: 1,
                   backgroundColor: "#EA580C",
@@ -3245,6 +3431,7 @@ export default function DashboardScreen({ navigation }) {
           </Pressable>
         </Pressable>
       </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

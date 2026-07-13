@@ -29,10 +29,15 @@ import {
 } from "../utils/format";
 
 export function CalculatorScreen() {
+  const PAGE_SIZE = 20;
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pagingRef = useRef({ offset: 0, search: "" });
+  const requestIdRef = useRef(0);
 
   // Form Modal State
   const [formVisible, setFormVisible] = useState(false);
@@ -54,46 +59,68 @@ export function CalculatorScreen() {
   const invoicePreviewRef = useRef(null);
 
   // Load Data
-  const loadEntries = useCallback(async (searchVal = searchTerm) => {
-    setLoading(true);
+  const loadEntries = useCallback(async ({ search = searchTerm, reset = false, mode = "default" } = {}) => {
+    const normalizedSearch = (search || "").trim().toLowerCase();
+    const isSearchChanged = normalizedSearch !== pagingRef.current.search;
+    const shouldReset = reset || isSearchChanged;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
+    const limit = PAGE_SIZE + 1;
+    const requestId = ++requestIdRef.current;
+
+    if (mode === "refresh") setRefreshing(true);
+    else if (mode === "loadMore") setLoadingMore(true);
+    else setLoading(true);
+
     try {
       let query = "SELECT * FROM calculator_entries";
       let params = [];
-      if (searchVal.trim()) {
-        query += " WHERE item_name LIKE ? OR note LIKE ? OR items_json LIKE ?";
-        const p = `%${searchVal}%`;
+      if (normalizedSearch) {
+        query += " WHERE LOWER(item_name) LIKE ? OR LOWER(IFNULL(note, '')) LIKE ? OR LOWER(IFNULL(items_json, '')) LIKE ?";
+        const p = `%${normalizedSearch}%`;
         params = [p, p, p];
       }
-      query += " ORDER BY id DESC";
+      query += " ORDER BY id DESC LIMIT ? OFFSET ?";
+      params.push(limit, offset);
+
       const res = await exec(query, params);
-      const rows = [];
-      for (let i = 0; i < res.rows.length; i++) {
-        rows.push(res.rows.item(i));
-      }
-      setEntries(rows);
+      if (requestId !== requestIdRef.current) return;
+      const rowsArray = res.rows?._array ?? [];
+      const pageEntries = rowsArray.slice(0, PAGE_SIZE);
+      const nextOffset = offset + pageEntries.length;
+
+      setHasMore(rowsArray.length > PAGE_SIZE);
+      setEntries(prev => (shouldReset ? pageEntries : [...prev, ...pageEntries]));
+      pagingRef.current = { offset: nextOffset, search: normalizedSearch };
     } catch (error) {
       console.log("LOAD CALCULATOR ENTRIES ERROR:", error);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+      }
     }
   }, [searchTerm]);
 
   useEffect(() => {
-    loadEntries();
-  }, []);
+    loadEntries({ reset: true });
+  }, [loadEntries]);
 
   // Search debounce
   useEffect(() => {
     const handler = setTimeout(() => {
-      loadEntries(searchTerm);
+      loadEntries({ search: searchTerm, reset: true });
     }, 250);
     return () => clearTimeout(handler);
-  }, [searchTerm]);
+  }, [searchTerm, loadEntries]);
 
   const handleRefresh = () => {
-    setRefreshing(true);
-    loadEntries();
+    loadEntries({ reset: true, mode: "refresh" });
+  };
+
+  const handleLoadMore = () => {
+    if (loading || loadingMore || !hasMore) return;
+    loadEntries({ mode: "loadMore" });
   };
 
   // Multiple Items Helpers
@@ -235,7 +262,7 @@ export function CalculatorScreen() {
         );
       }
       setFormVisible(false);
-      loadEntries();
+      loadEntries({ reset: true });
     } catch (error) {
       console.log("SAVE CALCULATOR ENTRY ERROR:", error);
       Alert.alert("Gagal", "Tidak dapat menyimpan data kalkulasi.");
@@ -252,7 +279,7 @@ export function CalculatorScreen() {
         onPress: async () => {
           try {
             await exec("DELETE FROM calculator_entries WHERE id = ?", [entry.id]);
-            loadEntries();
+            loadEntries({ reset: true });
           } catch (error) {
             console.log("DELETE CALCULATOR ENTRY ERROR:", error);
             Alert.alert("Gagal", "Tidak dapat menghapus data.");
@@ -373,7 +400,7 @@ export function CalculatorScreen() {
         <View style={{ backgroundColor: "#F8FAFC", borderRadius: 10, padding: 10, marginTop: 12, gap: 4 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ fontSize: 11, color: "#64748B" }}>Total Barang</Text>
-            <Text style={{ fontSize: 11, fontWeight: "600", color: "#475569" }}>{totalItemsQty} Unit</Text>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: "#475569" }}>{totalItemsQty} pcs</Text>
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ fontSize: 11, color: "#64748B" }}>Subtotal Barang</Text>
@@ -515,9 +542,18 @@ export function CalculatorScreen() {
           renderItem={renderItem}
           refreshing={refreshing}
           onRefresh={handleRefresh}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
           contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 16 }}>
+                <ActivityIndicator color="#0D9488" />
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
-            loading ? (
+            loading && !refreshing ? (
               <View style={{ paddingVertical: 40 }}>
                 <ActivityIndicator color="#0D9488" />
               </View>
@@ -796,7 +832,7 @@ export function CalculatorScreen() {
                 }}
               >
                 <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#115E59" }}>Subtotal ({formTotalQty} Unit)</Text>
+                  <Text style={{ fontSize: 12, color: "#115E59" }}>Subtotal ({formTotalQty} pcs)</Text>
                   <Text style={{ fontSize: 12, fontWeight: "600", color: "#115E59" }}>{formatCurrencyValue(formSubtotal)}</Text>
                 </View>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", borderTopWidth: 0.5, borderTopColor: "#99F6E4", paddingTop: 4, marginTop: 4 }}>
@@ -931,7 +967,7 @@ export function CalculatorScreen() {
                       {/* Costs Breakdown */}
                       <View style={{ gap: 5 }}>
                         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                          <Text style={{ fontSize: 11, color: "#64748B" }}>Total Barang ({totalItemsQty} Unit)</Text>
+                          <Text style={{ fontSize: 11, color: "#64748B" }}>Total Barang ({totalItemsQty} pcs)</Text>
                           <Text style={{ fontSize: 11, fontWeight: "600", color: "#475569" }}>{formatCurrencyValue(selectedEntry.base_price)}</Text>
                         </View>
                         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

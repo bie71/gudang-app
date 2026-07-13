@@ -71,7 +71,7 @@ function emitBookkeepingRefreshEvent(navigation) {
   parent.emit({ type: "bookkeeping:refresh", target: targetKey });
 }
 
-export function BookkeepingScreen({ navigation }) {
+export function BookkeepingScreen({ route, navigation }) {
   const PAGE_SIZE = 20;
   const insets = useSafeAreaInsets();
   const [entries, setEntries] = useState([]);
@@ -125,6 +125,13 @@ export function BookkeepingScreen({ navigation }) {
       },
     ]);
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (route?.params?.search !== undefined) {
+      setSearchTerm(route.params.search);
+      navigation.setParams({ search: undefined });
+    }
+  }, [route?.params?.search]);
 
   useEffect(() => {
     loadEntries({ search: searchTerm, reset: true });
@@ -663,28 +670,48 @@ export function BookkeepingScreen({ navigation }) {
       {/* Dark Header Container */}
       <View style={{ backgroundColor: "#0F172A", padding: 20, paddingBottom: 20 }}>
         {/* Header row */}
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate("Dashboard");
+                }
+              }}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: "rgba(255, 255, 255, 0.15)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="arrow-back" size={20} color="#fff" />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 22, fontWeight: "700", color: "#fff" }}>Pembukuan</Text>
+          </View>
+
+          {/* PDF Report Button in Header */}
           <TouchableOpacity
+            onPress={openReportModal}
             activeOpacity={0.7}
-            onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate("Dashboard");
-              }
-            }}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: "rgba(255, 255, 255, 0.15)",
+              flexDirection: "row",
               alignItems: "center",
-              justifyContent: "center",
+              backgroundColor: "#0EA5E9",
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              height: 36,
+              gap: 6,
             }}
           >
-            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Ionicons name="document-text-outline" size={16} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#fff" }}>Pembukuan</Text>
         </View>
 
         {/* Search bar inside header */}
@@ -763,56 +790,7 @@ export function BookkeepingScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Report Buttons */}
-        <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
-          <TouchableOpacity
-            onPress={openReportModal}
-            activeOpacity={0.7}
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: "#0EA5E9",
-              borderRadius: 14,
-              height: 46,
-              shadowColor: "#0EA5E9",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.15,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <Ionicons name="document-text-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Laporan PDF</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleExportCsv}
-            disabled={csvExporting}
-            activeOpacity={0.7}
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: csvExporting ? "#94A3B8" : "#16A34A",
-              borderRadius: 14,
-              height: 46,
-              shadowColor: csvExporting ? "transparent" : "#16A34A",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: csvExporting ? 0 : 0.15,
-              shadowRadius: 8,
-              elevation: csvExporting ? 0 : 2,
-            }}
-          >
-            {csvExporting ? (
-              <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
-            ) : (
-              <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-            )}
-            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>CSV</Text>
-          </TouchableOpacity>
-        </View>
+
 
         <FlatList
           data={entries}
