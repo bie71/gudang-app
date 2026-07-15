@@ -73,6 +73,7 @@ export function ItemsScreen({ route, navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [syncingSheets, setSyncingSheets] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
@@ -180,6 +181,21 @@ export function ItemsScreen({ route, navigation }) {
       Alert.alert("Gagal", "Barang tidak dapat dihapus. Silakan coba lagi.");
     }
   }
+
+  const handleSheetsSync = async () => {
+    setSyncingSheets(true);
+    try {
+      const { syncModuleData } = require("../../services/googleSheets");
+      await syncModuleData("barang");
+      Alert.alert("Sukses", "Data Barang berhasil disinkronkan dengan Google Sheets.");
+      await loadItems({ search: searchTerm, reset: true });
+    } catch (err) {
+      console.log("SYNC ERROR:", err);
+      Alert.alert("Gagal Sinkronisasi", err?.message || "Terjadi kesalahan.");
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
 
   const handleRefresh = () => loadItems({ search: searchTerm, reset: true, mode: "refresh" });
   const handleLoadMore = () => {
@@ -486,22 +502,49 @@ export function ItemsScreen({ route, navigation }) {
           <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
             Katalog Barang
           </Text>
-          <TouchableOpacity
-            onPress={openReportModal}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: "#0D9488",
-              borderRadius: 10,
-              paddingHorizontal: 12,
-              height: 36,
-              gap: 6,
-            }}
-          >
-            <Ionicons name="document-text-outline" size={16} color="#fff" />
-            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <TouchableOpacity
+              onPress={handleSheetsSync}
+              activeOpacity={0.7}
+              disabled={syncingSheets}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#10B981",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 36,
+                gap: 6,
+                opacity: syncingSheets ? 0.7 : 1,
+              }}
+            >
+              {syncingSheets ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="sync-outline" size={16} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Sync</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={openReportModal}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#0D9488",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 36,
+                gap: 6,
+              }}
+            >
+              <Ionicons name="document-text-outline" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Search & Actions Row */}

@@ -40,6 +40,8 @@ export async function ensureDbReady() {
         "order_date TEXT NOT NULL," +
         "status TEXT NOT NULL DEFAULT 'PROGRESS'," +
         "note TEXT," +
+        "close_po_date TEXT," +
+        "estimated_ready_date TEXT," +
         "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
         ");";
       const createPurchaseOrderItemsSql =
@@ -84,6 +86,16 @@ export async function ensureDbReady() {
         "note TEXT," +
         "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
         ");";
+      const createNotificationsSql =
+        "CREATE TABLE IF NOT EXISTS notifications (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "title TEXT NOT NULL," +
+        "message TEXT NOT NULL," +
+        "category TEXT NOT NULL," +
+        "is_read INTEGER NOT NULL DEFAULT 0," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
+        ");";
+
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
       await db.execAsync(createPurchaseOrderSql);
@@ -91,10 +103,22 @@ export async function ensureDbReady() {
       await db.execAsync(createBookkeepingSql);
       await db.execAsync(createBookkeepingHistorySql);
       await db.execAsync(createCalculatorSql);
+      await db.execAsync(createNotificationsSql);
+
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
       } catch (error) {
         // ignore if column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN close_po_date TEXT");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN estimated_ready_date TEXT");
+      } catch (error) {
+        // column already exists
       }
       try {
         await db.execAsync("ALTER TABLE items ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0");
@@ -170,7 +194,7 @@ export async function exec(sql, params = []) {
     try {
       const execution = await statement.executeAsync(params);
       const rowsArray = await execution.getAllAsync();
-      return {
+      const result = {
         rows: {
           length: rowsArray.length,
           item: index => rowsArray[index],
@@ -179,11 +203,120 @@ export async function exec(sql, params = []) {
         rowsAffected: execution.changes,
         insertId: execution.lastInsertRowId ?? null,
       };
+
+      // Jalankan sinkronisasi Google Sheets di background (async)
+      handleDatabaseChangeHook(query, params, result).catch(err => {
+        console.log("GOOGLE SHEETS SYNC HOOK ERROR:", err);
+      });
+
+      return result;
     } finally {
       await statement.finalizeAsync();
     }
   } catch (error) {
     console.log("SQL ERROR:", error);
     throw error;
+  }
+}
+
+// Hook untuk mendeteksi perubahan SQLite lokal dan mengirimkannya ke Google Sheets
+async function handleDatabaseChangeHook(query, params, result) {
+  const trimmed = query.trim().toUpperCase();
+  // Hanya proses jika query melakukan modifikasi data (INSERT/UPDATE/DELETE)
+  if (!trimmed.startsWith("INSERT") && !trimmed.startsWith("UPDATE") && !trimmed.startsWith("DELETE")) {
+    return;
+  }
+
+  // Import dinamis untuk menghindari circular dependency
+  const { syncLocalToGoogleSheets } = require("./googleSheets");
+
+  // Query data baris SQLite secara aman tanpa memicu hook (menggunakan prepareAsync langsung)
+  const queryRow = async (tableName, id) => {
+    try {
+      const db = await ensureDbReady();
+      const statement = await db.prepareAsync(`SELECT * FROM ${tableName} WHERE id = ?`);
+      try {
+        const execResult = await statement.executeAsync([id]);
+        const rows = await execResult.getAllAsync();
+        return rows[0] || null;
+      } finally {
+        await statement.finalizeAsync();
+      }
+    } catch (e) {
+      console.log(`Error querying row for sync: ${tableName} ID ${id}`, e);
+      return null;
+    }
+  };
+
+  // 1. DATA BARANG (ITEMS)
+  if (trimmed.includes("INSERT INTO ITEMS")) {
+    const id = result.insertId;
+    if (id) {
+      const row = await queryRow("items", id);
+      if (row) await syncLocalToGoogleSheets("barang", "create", row);
+    }
+  } else if (trimmed.includes("UPDATE ITEMS")) {
+    const id = params[params.length - 1];
+    if (id) {
+      const row = await queryRow("items", id);
+      if (row) await syncLocalToGoogleSheets("barang", "update", row);
+    }
+  } else if (trimmed.includes("DELETE FROM ITEMS")) {
+    const id = params[0];
+    if (id) await syncLocalToGoogleSheets("barang", "delete", { id });
+  }
+
+  // 2. PURCHASE ORDERS (PO)
+  else if (trimmed.includes("INSERT INTO PURCHASE_ORDERS")) {
+    const id = result.insertId;
+    if (id) {
+      const row = await queryRow("purchase_orders", id);
+      if (row) await syncLocalToGoogleSheets("po", "create", row);
+    }
+  } else if (trimmed.includes("UPDATE PURCHASE_ORDERS")) {
+    const id = params[params.length - 1];
+    if (id) {
+      const row = await queryRow("purchase_orders", id);
+      if (row) await syncLocalToGoogleSheets("po", "update", row);
+    }
+  } else if (trimmed.includes("DELETE FROM PURCHASE_ORDERS")) {
+    const id = params[0];
+    if (id) await syncLocalToGoogleSheets("po", "delete", { id });
+  }
+
+  // 3. KEUANGAN (BOOKKEEPING)
+  else if (trimmed.includes("INSERT INTO BOOKKEEPING_ENTRIES")) {
+    const id = result.insertId;
+    if (id) {
+      const row = await queryRow("bookkeeping_entries", id);
+      if (row) await syncLocalToGoogleSheets("keuangan", "create", row);
+    }
+  } else if (trimmed.includes("UPDATE BOOKKEEPING_ENTRIES")) {
+    const id = params[params.length - 1];
+    if (id) {
+      const row = await queryRow("bookkeeping_entries", id);
+      if (row) await syncLocalToGoogleSheets("keuangan", "update", row);
+    }
+  } else if (trimmed.includes("DELETE FROM BOOKKEEPING_ENTRIES")) {
+    const id = params[0];
+    if (id) await syncLocalToGoogleSheets("keuangan", "delete", { id });
+  }
+
+  // 4. KALKULATOR BIAYA (CALCULATOR)
+  else if (trimmed.includes("INSERT INTO CALCULATOR_ENTRIES")) {
+    const id = result.insertId;
+    if (id) {
+      const row = await queryRow("calculator_entries", id);
+      if (row) await syncLocalToGoogleSheets("kalkulator", "create", row);
+    }
+  } else if (trimmed.includes("UPDATE CALCULATOR_ENTRIES")) {
+    const id = params[params.length - 1];
+    if (id) {
+      const row = await queryRow("calculator_entries", id);
+      if (row) await syncLocalToGoogleSheets("kalkulator", "update", row);
+    }
+  } else if (trimmed.includes("DELETE FROM CALCULATOR_ENTRIES")) {
+    const id = params[0];
+    if (id) await syncLocalToGoogleSheets("kalkulator", "delete", { id });
   }
 }

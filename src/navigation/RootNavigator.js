@@ -11,6 +11,8 @@ import {
 import { AddBookkeepingScreen, BookkeepingDetailScreen, BookkeepingHistoryScreen } from "../screens/bookkeeping";
 import HistoryScreen from "../screens/HistoryScreen";
 import DataManagementScreen from "../screens/DataManagementScreen";
+import GoogleSheetsScreen from "../screens/GoogleSheetsScreen";
+import NotificationsScreen from "../screens/NotificationsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -44,6 +46,16 @@ export default function RootNavigator() {
         name="DataManagement"
         component={DataManagementScreen}
         options={{ title: "Manajemen Data" }}
+      />
+      <Stack.Screen
+        name="GoogleSheets"
+        component={GoogleSheetsScreen}
+        options={{ title: "Google Sheets CRUD", headerShown: false }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: "Pemberitahuan", headerShown: false }}
       />
     </Stack.Navigator>
   );

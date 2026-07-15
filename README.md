@@ -3,10 +3,23 @@
 Aplikasi gudang **offline-first** untuk input barang, stok masuk/keluar, riwayat transaksi, dan dashboard metrik.
 
 ## ✨ Fitur
-- CRUD barang (nama, kategori, harga, stok)
-- Stok **Masuk/IN** & **Keluar/OUT** + history
-- Dashboard: **Total Barang**, **Total Stok**, **Total Omzet** (∑ OUT × harga)
-- Desain modern + **splash screen**
+- **Manajemen Inventori (Barang):** CRUD barang (nama, kategori, harga modal, harga jual, stok) & stok masuk (IN) / keluar (OUT) + riwayat mutasi stok.
+- **Purchase Order (PO):** Pemesanan barang ke supplier, detail pemesan, item barang belanjaan, estimasi tanggal Close PO & tanggal barang Ready, dan pelacakan status PO (Progress/Done).
+- **Pembukuan (Keuangan/Kas):** Pencatatan pemasukan dan pengeluaran kas toko secara terperinci beserta log perubahan data.
+- **Kalkulator Biaya:** Penghitungan harga pokok penjualan (HPP) mencakup ongkir, pajak, dan biaya lainnya secara dinamis.
+- **Integrasi Google Sheets Async (Two-Way Sync):**
+  - Pembuatan otomatis spreadsheet di Google Drive pengguna dengan 4 tab terpisah (`Barang`, `PO`, `Keuangan`, `Kalkulator`).
+  - Sinkronisasi otomatis di latar belakang (background async) setiap kali pengguna melakukan aktivitas CRUD lokal.
+  - Sinkronisasi dua arah (Two-Way Sync) per modul maupun global untuk menyamakan data lokal dengan cloud.
+  - Deteksi tab dinamis dengan gesture tarik ke bawah (**Pull-to-Refresh**) di layar Google Sheets CRUD.
+- **Sistem Notifikasi & Alert Pintar (Lonceng):**
+  * **Badge Riwayat Aktif:** Badge lingkaran merah real-time dengan jumlah angka pemberitahuan belum dibaca di Dashboard.
+  * **Peringatan Stok Habis:** Otomatis mengingatkan jika stok barang bernilai `0` pcs agar segera melakukan pemesanan ulang (PO).
+  * **Peringatan PO Jatuh Tempo (H-1):** Alert otomatis H-1 sebelum tanggal Close PO atau sebelum barang diestimasikan Ready.
+  * **Pengingat Harian Kas (Daily Reminder):** Mengingatkan pengguna setiap malam jika belum mencatat transaksi kas hari ini.
+  * **Laporan Ringkasan Bulanan Keuangan:** Rekapitulasi bulanan otomatis yang menghitung total pemasukan, pengeluaran, dan surplus/defisit kas bulan lalu.
+  * **Pop-Up Detail & Baca Semua:** Kemudahan membaca detail lengkap via pop-up alert dialog dan opsi menandai semua notifikasi terbaca.
+- **Desain Modern & Splash Screen:** Antarmuka responsif dan estetis berbasis HSL modern.
 
 ## 🧰 Requirement
 - **Node.js** LTS (18+/20+)
@@ -34,21 +47,90 @@ npx expo run:ios   # (butuh macOS + Xcode)
 ## 🗃️ Skema Database
 Tabel yang digunakan oleh aplikasi (dibuat otomatis saat boot):
 ```sql
+-- Kategori & Barang
 CREATE TABLE IF NOT EXISTS items(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   category TEXT,
-  price INTEGER NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0,      -- Harga Jual
+  cost_price INTEGER NOT NULL DEFAULT 0, -- Harga Modal (HPP)
   stock INTEGER NOT NULL DEFAULT 0
 );
+
+-- Riwayat Pergerakan Stok
 CREATE TABLE IF NOT EXISTS stock_history(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INTEGER NOT NULL,
-  type TEXT NOT NULL,      -- 'IN' | 'OUT'
+  type TEXT NOT NULL,                    -- 'IN' | 'OUT'
   qty INTEGER NOT NULL,
+  unit_price INTEGER,
+  unit_cost INTEGER,
+  profit_amount INTEGER NOT NULL DEFAULT 0,
   note TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   FOREIGN KEY(item_id) REFERENCES items(id)
+);
+
+-- Purchase Orders (PO)
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_name TEXT,
+  orderer_name TEXT,
+  item_name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0,
+  order_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PROGRESS', -- 'PROGRESS' | 'DONE' | 'CANCELLED'
+  note TEXT,
+  close_po_date TEXT,                      -- Tanggal Close PO (Format YYYY-MM-DD)
+  estimated_ready_date TEXT,               -- Estimasi Ready Barang (Format YYYY-MM-DD)
+  completed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- Detail Item di dalam PO
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0,
+  cost_price INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY(order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
+);
+
+-- Kas / Buku Keuangan
+CREATE TABLE IF NOT EXISTS bookkeeping_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,       -- Positif (Pemasukan), Negatif (Pengeluaran)
+  entry_date TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- Kalkulator HPP & Biaya
+CREATE TABLE IF NOT EXISTS calculator_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_name TEXT NOT NULL,
+  base_price INTEGER NOT NULL DEFAULT 0,
+  shipping_fee INTEGER NOT NULL DEFAULT 0,
+  tax_fee INTEGER NOT NULL DEFAULT 0,
+  other_fee INTEGER NOT NULL DEFAULT 0,
+  total_price INTEGER NOT NULL DEFAULT 0,
+  items_json TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- Sistem Notifikasi & Peringatan
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  category TEXT NOT NULL,                  -- 'barang' | 'po' | 'keuangan' | 'system'
+  is_read INTEGER NOT NULL DEFAULT 0,      -- 0 (Belum Dibaca), 1 (Sudah Dibaca)
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 ```
 

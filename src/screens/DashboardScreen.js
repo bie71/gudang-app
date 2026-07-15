@@ -81,6 +81,7 @@ export default function DashboardScreen({ navigation }) {
   const [tempStoreName, setTempStoreName] = useState("");
   const [storeNameModalVisible, setStoreNameModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [detailModal, setDetailModal] = useState({ visible: false, title: "", description: "", rows: [], type: null });
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailLoadingMore, setDetailLoadingMore] = useState(false);
@@ -766,6 +767,15 @@ export default function DashboardScreen({ navigation }) {
   async function load() {
     try {
       setRefreshing(true);
+      try {
+        const { checkAndGenerateAlerts, getUnreadNotificationCount } = require("../services/notifications");
+        await checkAndGenerateAlerts();
+        const unreadCount = await getUnreadNotificationCount();
+        setUnreadNotificationsCount(unreadCount);
+      } catch (err) {
+        console.log("Error loading notifications count:", err);
+      }
+
       const summaryRes = await exec(`
         SELECT
           IFNULL(SUM(stock),0) as totalStock,
@@ -2746,9 +2756,35 @@ export default function DashboardScreen({ navigation }) {
                 BukuToko
               </Text>
             </View>
-            <View style={{ flexDirection: "row", gap: 16 }}>
-              <TouchableOpacity activeOpacity={0.7} onPress={() => Alert.alert("Notifikasi", "Tidak ada notifikasi baru")}>
+            <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("GoogleSheets")}>
+                <Ionicons name="grid" size={22} color="#34A853" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("Notifications")}
+                style={{ position: "relative", padding: 4 }}
+              >
                 <Ionicons name="notifications-outline" size={24} color="#fff" />
+                {unreadNotificationsCount > 0 && (
+                  <View style={{
+                    position: "absolute",
+                    right: 2,
+                    top: 2,
+                    backgroundColor: "#EF4444",
+                    borderRadius: 7,
+                    width: 14,
+                    height: 14,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    borderWidth: 1.5,
+                    borderColor: "#0F172A",
+                  }}>
+                    <Text style={{ color: "#fff", fontSize: 8, fontWeight: "700", textAlign: "center" }}>
+                      {unreadNotificationsCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
               <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("History")}>
                 <Ionicons name="time-outline" size={24} color="#fff" />

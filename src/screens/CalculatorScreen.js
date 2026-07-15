@@ -36,6 +36,7 @@ export function CalculatorScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [syncingSheets, setSyncingSheets] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
 
@@ -57,6 +58,21 @@ export function CalculatorScreen() {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [exporting, setExporting] = useState(false);
   const invoicePreviewRef = useRef(null);
+
+  const handleSheetsSync = async () => {
+    setSyncingSheets(true);
+    try {
+      const { syncModuleData } = require("../services/googleSheets");
+      await syncModuleData("kalkulator");
+      Alert.alert("Sukses", "Data Kalkulator berhasil disinkronkan dengan Google Sheets.");
+      loadEntries({ search: searchTerm, reset: true });
+    } catch (err) {
+      console.log("SYNC ERROR:", err);
+      Alert.alert("Gagal Sinkronisasi", err?.message || "Terjadi kesalahan.");
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
 
   // Load Data
   const loadEntries = useCallback(async ({ search = searchTerm, reset = false, mode = "default" } = {}) => {
@@ -501,6 +517,30 @@ export function CalculatorScreen() {
           <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
             Kalkulator Biaya
           </Text>
+          <TouchableOpacity
+            onPress={handleSheetsSync}
+            activeOpacity={0.7}
+            disabled={syncingSheets}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#10B981",
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              height: 36,
+              gap: 6,
+              opacity: syncingSheets ? 0.7 : 1,
+            }}
+          >
+            {syncingSheets ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="sync-outline" size={16} color="#fff" />
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Sync</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Search row */}

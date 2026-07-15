@@ -147,6 +147,7 @@ export function PurchaseOrdersScreen({ route, navigation }) {
     ...buildDefaultReportRange(),
   }));
   const [reportGenerating, setReportGenerating] = useState(false);
+  const [syncingSheets, setSyncingSheets] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
   const pagingRef = useRef({ offset: 0, search: "" });
   const requestIdRef = useRef(0);
@@ -214,6 +215,21 @@ export function PurchaseOrdersScreen({ route, navigation }) {
       },
     ]);
   }, [searchTerm]);
+
+  const handleSheetsSync = async () => {
+    setSyncingSheets(true);
+    try {
+      const { syncModuleData } = require("../../services/googleSheets");
+      await syncModuleData("po");
+      Alert.alert("Sukses", "Data Purchase Order berhasil disinkronkan dengan Google Sheets.");
+      loadOrders({ search: searchTerm, reset: true });
+    } catch (err) {
+      console.log("SYNC ERROR:", err);
+      Alert.alert("Gagal Sinkronisasi", err?.message || "Terjadi kesalahan.");
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
 
   async function loadOrders({ search = searchTerm, reset = false, mode = "default" } = {}) {
     const normalizedSearch = (search || "").trim().toLowerCase();
@@ -873,22 +889,49 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           <Text style={{ color: "#fff", fontSize: 24, fontWeight: "700", letterSpacing: -0.5 }}>
             Purchase Order
           </Text>
-          <TouchableOpacity
-            onPress={openReportModal}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: "#0284C7",
-              borderRadius: 10,
-              paddingHorizontal: 12,
-              height: 36,
-              gap: 6,
-            }}
-          >
-            <Ionicons name="document-text-outline" size={16} color="#fff" />
-            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <TouchableOpacity
+              onPress={handleSheetsSync}
+              activeOpacity={0.7}
+              disabled={syncingSheets}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#10B981",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 36,
+                gap: 6,
+                opacity: syncingSheets ? 0.7 : 1,
+              }}
+            >
+              {syncingSheets ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="sync-outline" size={16} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Sync</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={openReportModal}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#0284C7",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 36,
+                gap: 6,
+              }}
+            >
+              <Ionicons name="document-text-outline" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Laporan</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -1085,6 +1128,8 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
+  const [closePoDate, setClosePoDate] = useState("");
+  const [estimatedReadyDate, setEstimatedReadyDate] = useState("");
   const [status, setStatus] = useState("PROGRESS");
   const [note, setNote] = useState("");
   const [items, setItems] = useState([createEmptyItem()]);
@@ -1154,8 +1199,8 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
     try {
       await exec("BEGIN TRANSACTION");
       const insertRes = await exec(
-        `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note, completed_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note, completed_at, close_po_date, estimated_ready_date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [
           supplierName || null,
           ordererName || null,
@@ -1166,6 +1211,8 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
           status,
           note || null,
           completedAtValue,
+          closePoDate || null,
+          estimatedReadyDate || null,
         ],
       );
       const orderId = insertRes.insertId;
@@ -1296,6 +1343,8 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
+        <DatePickerField label="Tanggal Close PO" value={closePoDate} onChange={setClosePoDate} />
+        <DatePickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -1358,6 +1407,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
+  const [closePoDate, setClosePoDate] = useState("");
+  const [estimatedReadyDate, setEstimatedReadyDate] = useState("");
   const [status, setStatus] = useState("PROGRESS");
   const [initialStatus, setInitialStatus] = useState("PROGRESS");
   const [existingCompletedAt, setExistingCompletedAt] = useState(null);
@@ -1386,6 +1437,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         setSupplierName(orderRow.supplier_name || "");
         setOrdererName(orderRow.orderer_name || "");
         setOrderDate(formatDateInputValue(orderRow.order_date));
+        setClosePoDate(orderRow.close_po_date ? formatDateInputValue(orderRow.close_po_date) : "");
+        setEstimatedReadyDate(orderRow.estimated_ready_date ? formatDateInputValue(orderRow.estimated_ready_date) : "");
         const nextStatus = orderRow.status || "PROGRESS";
         setStatus(nextStatus);
         setInitialStatus(nextStatus);
@@ -1498,7 +1551,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     try {
       await exec("BEGIN TRANSACTION");
       await exec(
-        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?, completed_at = ?
+        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?, completed_at = ?, close_po_date = ?, estimated_ready_date = ?
          WHERE id = ?`,
         [
           supplierName || null,
@@ -1510,6 +1563,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
           normalizedStatus,
           note || null,
           completedAtValue,
+          closePoDate || null,
+          estimatedReadyDate || null,
           orderId,
         ],
       );
@@ -1647,6 +1702,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
+        <DatePickerField label="Tanggal Close PO" value={closePoDate} onChange={setClosePoDate} />
+        <DatePickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -1773,6 +1830,8 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         status: row.status,
         orderDate: row.order_date,
         note: row.note,
+        closePoDate: row.close_po_date,
+        estimatedReadyDate: row.estimated_ready_date,
         createdAt: row.created_at,
         completedAt: row.completed_at,
       });
@@ -2545,6 +2604,8 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             <DetailRow label="Pemasok" value={order.supplierName || "-"} />
             <DetailRow label="Pemesan" value={order.ordererName || "-"} />
             <DetailRow label="Tanggal PO" value={formatDateDisplay(order.orderDate)} />
+            <DetailRow label="Tanggal Close PO" value={order.closePoDate ? formatDateDisplay(order.closePoDate) : "-"} />
+            <DetailRow label="Estimasi Ready" value={order.estimatedReadyDate ? formatDateDisplay(order.estimatedReadyDate) : "-"} />
             <DetailRow label="Jumlah Barang" value={`${itemCountDisplay} barang`} />
             <DetailRow label="Total Qty" value={`${quantityDisplay} pcs`} />
             <DetailRow label="Nilai Total" value={totalDisplay} bold />
