@@ -13,6 +13,7 @@ import HistoryScreen from "../screens/HistoryScreen";
 import DataManagementScreen from "../screens/DataManagementScreen";
 import GoogleSheetsScreen from "../screens/GoogleSheetsScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
+import AnalyticsScreen from "../screens/AnalyticsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -56,6 +57,11 @@ export default function RootNavigator() {
         name="Notifications"
         component={NotificationsScreen}
         options={{ title: "Pemberitahuan", headerShown: false }}
+      />
+      <Stack.Screen
+        name="Analytics"
+        component={AnalyticsScreen}
+        options={{ title: "Laporan & Analisis", headerShown: false }}
       />
     </Stack.Navigator>
   );

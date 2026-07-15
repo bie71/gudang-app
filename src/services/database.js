@@ -18,7 +18,8 @@ export async function ensureDbReady() {
         "name TEXT NOT NULL," +
         "category TEXT," +
         "price INTEGER NOT NULL DEFAULT 0," +
-        "stock INTEGER NOT NULL DEFAULT 0" +
+        "stock INTEGER NOT NULL DEFAULT 0," +
+        "size TEXT" +
         ");";
       const createHistorySql =
         "CREATE TABLE IF NOT EXISTS stock_history (" +
@@ -122,6 +123,11 @@ export async function ensureDbReady() {
       }
       try {
         await db.execAsync("ALTER TABLE items ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0");
+      } catch (error) {
+        // column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE items ADD COLUMN size TEXT");
       } catch (error) {
         // column already exists
       }

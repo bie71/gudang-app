@@ -367,6 +367,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             po.supplier_name,
             po.status,
             po.note,
+            po.close_po_date,
+            po.estimated_ready_date,
             IFNULL(SUM(items.quantity), 0) as total_quantity,
             IFNULL(SUM(items.quantity * items.price), 0) as total_value,
             IFNULL(SUM(items.quantity * items.cost_price), 0) as total_cost,
@@ -395,6 +397,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           supplierName: row.supplier_name,
           status: row.status,
           note: row.note,
+          closePoDate: row.close_po_date,
+          estimatedReadyDate: row.estimated_ready_date,
           totalQuantity: Number(row.total_quantity ?? 0),
           totalValue: Number(row.total_value ?? 0),
           totalCost: Number(row.total_cost ?? 0),
@@ -437,6 +441,9 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           const completedDisplay = escapeHtml(
             entry.completedAt ? formatDateTimeDisplay(entry.completedAt) : "Belum selesai",
           );
+          const closePoDisplay = entry.closePoDate ? escapeHtml(formatDateDisplay(entry.closePoDate)) : "-";
+          const estimatedReadyDisplay = entry.estimatedReadyDate ? escapeHtml(formatDateDisplay(entry.estimatedReadyDate)) : "-";
+
           const qtyDisplay = escapeHtml(formatNumberValue(entry.totalQuantity));
           const valueDisplay = escapeHtml(formatCurrencyValue(entry.totalValue));
           const costDisplay = escapeHtml(formatCurrencyValue(totalCost));
@@ -453,6 +460,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
                 <div class="date-main">${orderDateDisplay}</div>
                 <div class="date-sub">Dibuat: ${createdDisplay}</div>
                 <div class="date-sub">Selesai: ${completedDisplay}</div>
+                <div class="date-sub">Close PO: ${closePoDisplay}</div>
+                <div class="date-sub">Ready: ${estimatedReadyDisplay}</div>
               </td>
               <td class="col-party">
                 <div class="party-name">${supplierLabel}</div>
@@ -538,7 +547,7 @@ export function PurchaseOrdersScreen({ route, navigation }) {
               th { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
               td { font-size: 13px; color: #0f172a; }
               .col-index { width: 48px; text-align: center; }
-              .col-date { width: 160px; }
+              .col-date { width: 180px; }
               .col-party { width: 200px; }
               .col-status { width: 110px; text-transform: uppercase; font-weight: 600; text-align: center; }
               .col-item { width: 200px; }
@@ -1133,6 +1142,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
   const [status, setStatus] = useState("PROGRESS");
   const [note, setNote] = useState("");
   const [items, setItems] = useState([createEmptyItem()]);
+  const scrollRef = useRef(null);
 
   const updateItemField = (index, field, value) => {
     setItems(prev => {
@@ -1241,7 +1251,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+      <FormScrollContainer ref={scrollRef} contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Tambah Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
@@ -1378,6 +1388,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
             onChangeText={setNote}
             placeholder="contoh: Kirim pekan depan"
             multiline
+            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
             style={{
               backgroundColor: "#fff",
               borderWidth: 1,
@@ -1422,6 +1433,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     costPrice: "",
   });
   const [items, setItems] = useState([createEmptyItem()]);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     async function load() {
@@ -1600,7 +1612,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+      <FormScrollContainer ref={scrollRef} contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Edit Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
@@ -1737,6 +1749,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
             onChangeText={setNote}
             placeholder="contoh: Kirim pekan depan"
             multiline
+            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
             style={{
               backgroundColor: "#fff",
               borderWidth: 1,
@@ -2145,6 +2158,8 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
                 <p><strong>No. PO</strong>${escapeHtml(String(order.id))}</p>
                 <p><strong>Tanggal PO</strong>${escapeHtml(formattedDate)}</p>
                 <p><strong>Pemesan</strong>${escapeHtml(order.ordererName || '-')}</p>
+                <p><strong>Tanggal Close PO</strong>${escapeHtml(order.closePoDate ? formatDateDisplay(order.closePoDate) : '-')}</p>
+                <p><strong>Estimasi Tanggal Ready</strong>${escapeHtml(order.estimatedReadyDate ? formatDateDisplay(order.estimatedReadyDate) : '-')}</p>
                 <p><strong>Jumlah Barang</strong>${itemCountFormatted} item</p>
                 <p><strong>Total Qty</strong>${totalQuantityFormatted} pcs</p>
                 <p><strong>Nilai Total</strong>${totalFormatted}</p>

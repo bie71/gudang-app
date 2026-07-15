@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, forwardRef } from "react";
 import { KeyboardAvoidingView, ScrollView, Keyboard, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 
 export const KEYBOARD_AVOIDING_BEHAVIOR =
-  Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined;
+  Platform.OS === "ios" ? "padding" : undefined;
 
 function useFormKeyboardOffset(extraOffset = 0) {
   const headerHeight = useHeaderHeight();
@@ -12,12 +12,12 @@ function useFormKeyboardOffset(extraOffset = 0) {
   return headerHeight + platformOffset + extraOffset;
 }
 
-export default function FormScrollContainer({
+const FormScrollContainer = forwardRef(({
   children,
   contentContainerStyle,
   keyboardShouldPersistTaps,
   ...rest
-}) {
+}, ref) => {
   const keyboardOffset = useFormKeyboardOffset();
   const insets = useSafeAreaInsets();
   const [keyboardSpace, setKeyboardSpace] = useState(0);
@@ -39,15 +39,40 @@ export default function FormScrollContainer({
   }, [insets.bottom]);
 
   const extraBottomSpacing = keyboardSpace > 0 ? keyboardSpace + 24 : 0;
+  
+  let callerPaddingBottom = 32;
+  let callerStyleClean = {};
+
+  if (contentContainerStyle) {
+    if (Array.isArray(contentContainerStyle)) {
+      contentContainerStyle.forEach(style => {
+        if (style && style.paddingBottom !== undefined) {
+          callerPaddingBottom = typeof style.paddingBottom === "number" ? style.paddingBottom : 32;
+        }
+      });
+      callerStyleClean = contentContainerStyle.map(style => {
+        if (!style) return style;
+        const { paddingBottom, ...other } = style;
+        return other;
+      });
+    } else {
+      if (contentContainerStyle.paddingBottom !== undefined) {
+        callerPaddingBottom = typeof contentContainerStyle.paddingBottom === "number" ? contentContainerStyle.paddingBottom : 32;
+      }
+      const { paddingBottom, ...other } = contentContainerStyle;
+      callerStyleClean = other;
+    }
+  }
+
   const baseContentStyle = {
     flexGrow: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 32 + insets.bottom + extraBottomSpacing,
+    paddingBottom: callerPaddingBottom + insets.bottom + extraBottomSpacing,
   };
-  const mergedContentStyle = Array.isArray(contentContainerStyle)
-    ? [baseContentStyle, ...contentContainerStyle]
-    : { ...baseContentStyle, ...(contentContainerStyle || {}) };
+  const mergedContentStyle = Array.isArray(callerStyleClean)
+    ? [baseContentStyle, ...callerStyleClean]
+    : { ...baseContentStyle, ...callerStyleClean };
 
   return (
     <KeyboardAvoidingView
@@ -56,6 +81,7 @@ export default function FormScrollContainer({
       keyboardVerticalOffset={keyboardOffset}
     >
       <ScrollView
+        ref={ref}
         {...rest}
         keyboardShouldPersistTaps={keyboardShouldPersistTaps ?? "handled"}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
@@ -65,4 +91,6 @@ export default function FormScrollContainer({
       </ScrollView>
     </KeyboardAvoidingView>
   );
-}
+});
+
+export default FormScrollContainer;

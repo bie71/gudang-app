@@ -44,7 +44,7 @@ async function writeCsvToStorage({ fileBase, columns, rows }) {
 export async function exportItemsCsv() {
   const rows = await fetchRows(
     `
-      SELECT id, name, category, price, cost_price, stock
+      SELECT id, name, category, price, cost_price, stock, size
       FROM items
       ORDER BY id ASC
     `,
@@ -53,6 +53,7 @@ export async function exportItemsCsv() {
     { key: "id", header: "ID" },
     { key: "name", header: "Nama" },
     { key: "category", header: "Kategori" },
+    { key: "size", header: "Ukuran" },
     { key: "stock", header: "Stok" },
     { key: "price", header: "Harga Jual" },
     { key: "cost_price", header: "Harga Modal" },
@@ -72,6 +73,8 @@ export async function exportPurchaseOrdersCsv() {
         IFNULL(po.supplier_name, '') as supplier_name,
         IFNULL(po.note, '') as order_note,
         po.created_at,
+        IFNULL(po.close_po_date, '') as close_po_date,
+        IFNULL(po.estimated_ready_date, '') as estimated_ready_date,
         items.id as item_id,
         IFNULL(items.name, '') as item_name,
         IFNULL(items.quantity, 0) as item_quantity,
@@ -94,6 +97,8 @@ export async function exportPurchaseOrdersCsv() {
     { key: "status", header: "Status" },
     { key: "orderer_name", header: "Pemesan" },
     { key: "supplier_name", header: "Supplier" },
+    { key: "close_po_date", header: "Tanggal Close PO" },
+    { key: "estimated_ready_date", header: "Estimasi Tanggal Ready" },
     { key: "order_note", header: "Catatan Order" },
     { key: "created_at", header: "Dibuat" },
     { key: "order_total", header: "Total Order" },
@@ -156,6 +161,7 @@ export async function exportStockHistoryCsv() {
         h.id,
         h.item_id,
         i.name as item_name,
+        i.size as item_size,
         h.type,
         h.qty,
         IFNULL(h.note, '') as note,
@@ -172,6 +178,7 @@ export async function exportStockHistoryCsv() {
     { key: "id", header: "Riwayat ID" },
     { key: "item_id", header: "Item ID" },
     { key: "item_name", header: "Nama Item" },
+    { key: "item_size", header: "Ukuran Item" },
     { key: "type", header: "Jenis" },
     { key: "qty", header: "Qty" },
     { key: "unit_price", header: "Harga Jual" },

@@ -380,7 +380,8 @@ export async function syncLocalToGoogleSheets(moduleName, action, data) {
         String(data.category || ""),
         Number(data.price || 0),
         Number(data.cost_price || 0),
-        Number(data.stock || 0)
+        Number(data.stock || 0),
+        String(data.size || "")
       ];
     } else if (moduleName === "po") {
       rowValues = [
@@ -568,7 +569,7 @@ export async function syncModuleData(moduleName) {
       // Tulis header kolom default untuk tab baru tersebut
       let defaultHeaders = [];
       if (moduleName === "barang") {
-        defaultHeaders = ["ID", "Nama Barang", "Kategori", "Harga Jual", "Harga Modal", "Stok"];
+        defaultHeaders = ["ID", "Nama Barang", "Kategori", "Harga Jual", "Harga Modal", "Stok", "Ukuran"];
       } else if (moduleName === "po") {
         defaultHeaders = ["ID", "Nama Supplier", "Nama Barang", "Jumlah", "Harga", "Tanggal", "Status", "Catatan", "Tanggal Close PO", "Estimasi Ready"];
       } else if (moduleName === "keuangan") {
@@ -594,7 +595,7 @@ export async function syncModuleData(moduleName) {
     let localRows = [];
     const sqlite = require("./database");
     if (moduleName === "barang") {
-      const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock FROM items");
+      const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock, size FROM items");
       localRows = res.rows._array;
     } else if (moduleName === "po") {
       const res = await sqlite.exec("SELECT id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
@@ -635,11 +636,11 @@ export async function syncModuleData(moduleName) {
       
       if (!localIds.has(sId)) {
         if (moduleName === "barang") {
-          const [id, name, category, price, cost_price, stock] = sRow;
+          const [id, name, category, price, cost_price, stock, size] = sRow;
           if (id && name) {
             await sqlite.exec(
-              "INSERT OR REPLACE INTO items (id, name, category, price, cost_price, stock) VALUES (?, ?, ?, ?, ?, ?)",
-              [Number(id), name, category || "", Number(price || 0), Number(cost_price || 0), Number(stock || 0)]
+              "INSERT OR REPLACE INTO items (id, name, category, price, cost_price, stock, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [Number(id), name, category || "", Number(price || 0), Number(cost_price || 0), Number(stock || 0), size || ""]
             );
           }
         } else if (moduleName === "po") {
@@ -673,7 +674,7 @@ export async function syncModuleData(moduleName) {
     // 6. Ambil ulang data lokal gabungan (termasuk yang baru diimpor) untuk di-upload kembali ke Google Sheet
     let updatedLocalRows = [];
     if (moduleName === "barang") {
-      const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock FROM items");
+      const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock, size FROM items");
       updatedLocalRows = res.rows._array;
     } else if (moduleName === "po") {
       const res = await sqlite.exec("SELECT id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
@@ -688,7 +689,7 @@ export async function syncModuleData(moduleName) {
 
     const formatRow = (row) => {
       if (moduleName === "barang") {
-        return [String(row.id), String(row.name || ""), String(row.category || ""), Number(row.price || 0), Number(row.cost_price || 0), Number(row.stock || 0)];
+        return [String(row.id), String(row.name || ""), String(row.category || ""), Number(row.price || 0), Number(row.cost_price || 0), Number(row.stock || 0), String(row.size || "")];
       } else if (moduleName === "po") {
         return [String(row.id), String(row.supplier_name || ""), String(row.item_name || ""), Number(row.quantity || 0), Number(row.price || 0), String(row.order_date || ""), String(row.status || ""), String(row.note || ""), String(row.close_po_date || ""), String(row.estimated_ready_date || "")];
       } else if (moduleName === "keuangan") {

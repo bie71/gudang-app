@@ -123,7 +123,7 @@ export function ItemsScreen({ route, navigation }) {
     try {
       const res = await exec(
         `
-          SELECT id, name, category, price, cost_price, stock
+          SELECT id, name, category, price, cost_price, stock, size
           FROM items
           WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(category,'')) LIKE ?)
           ORDER BY id DESC
@@ -140,6 +140,7 @@ export function ItemsScreen({ route, navigation }) {
         price: Number(row.price ?? 0),
         costPrice: Number(row.cost_price ?? 0),
         stock: Number(row.stock ?? 0),
+        size: row.size || "",
       }));
       const nextOffset = offset + pageItems.length;
       setHasMore(rowsArray.length > PAGE_SIZE);
@@ -241,7 +242,8 @@ export function ItemsScreen({ route, navigation }) {
             i.name as item_name,
             i.category as item_category,
             i.price as default_price,
-            i.cost_price as default_cost
+            i.cost_price as default_cost,
+            i.size as item_size
           FROM stock_history sh
           JOIN items i ON i.id = sh.item_id
           WHERE DATE(sh.created_at) BETWEEN ? AND ?
@@ -293,6 +295,7 @@ export function ItemsScreen({ route, navigation }) {
           qty,
           itemName: row.item_name,
           category: row.item_category,
+          size: row.item_size,
           note: row.note,
           totalPrice,
           totalCost,
@@ -319,8 +322,8 @@ export function ItemsScreen({ route, navigation }) {
           const saleValue = entry.type === "OUT" ? formatCurrencyValue(entry.totalPrice) : "-";
           const costValue = formatCurrencyValue(entry.totalCost);
           const profitValue = entry.type === "OUT" ? formatCurrencyValue(entry.profitAmount) : "-";
-          const categoryBadge = entry.category
-            ? `<div class="item-category">${escapeHtml(entry.category)}</div>`
+          const categoryBadge = (entry.category || entry.size)
+            ? `<div class="item-category">${escapeHtml(entry.category || "")}${entry.category && entry.size ? " • " : ""}${entry.size ? `Ukuran ${escapeHtml(entry.size)}` : ""}</div>`
             : "";
           const noteText = entry.note ? escapeHtml(entry.note) : "-";
           return `
@@ -606,14 +609,6 @@ export function ItemsScreen({ route, navigation }) {
               iconColor = "#7C3AED";
             }
 
-            // Status indicator dot color based on stock levels
-            let dotColor = "#EF4444"; // low stock
-            if (item.stock > 50) {
-              dotColor = "#10B981"; // high stock
-            } else if (item.stock > 10) {
-              dotColor = "#F59E0B"; // moderate stock
-            }
-
             return (
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -650,21 +645,53 @@ export function ItemsScreen({ route, navigation }) {
                     <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
                       {lowerName.includes("minyak") ? "(SKU-MGS001)" : lowerName.includes("kardus") ? "(SKU001)" : lowerName.includes("pita") ? "(SKU-TPE002)" : `(SKU-00${item.id})`}
                       {item.category ? ` • ${item.category}` : " • Tanpa Kategori"}
+                      {item.size ? ` • Ukuran ${item.size}` : ""}
                     </Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-                      <Text style={{ fontSize: 13, fontWeight: "600", color: "#475569" }}>
-                        {formatNumberValue(item.stock)} pcs
-                      </Text>
-                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginLeft: 8 }} />
-                    </View>
-                    {item.stock <= 5 && (
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
-                        <Ionicons name="warning" size={12} color="#EF4444" />
-                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#EF4444" }}>
-                          Stok kritis! Tinggal {item.stock} pcs
-                        </Text>
-                      </View>
-                    )}
+                    
+                    {/* Visual Stock Progress Bar */}
+                    {(() => {
+                      const stockVal = Number(item.stock ?? 0);
+                      const maxThreshold = 25;
+                      const pct = Math.min((stockVal / maxThreshold) * 100, 100);
+                      
+                      let barColor = "#10B981"; // Green
+                      let badgeLabel = "Stok Aman";
+                      let badgeColor = "#047857";
+                      let badgeBg = "#D1FAE5";
+
+                      if (stockVal === 0) {
+                        barColor = "#EF4444"; // Red
+                        badgeLabel = "Stok Habis";
+                        badgeColor = "#B91C1C";
+                        badgeBg = "#FEE2E2";
+                      } else if (stockVal <= 5) {
+                        barColor = "#F59E0B"; // Amber
+                        badgeLabel = "Stok Kritis";
+                        badgeColor = "#B45309";
+                        badgeBg = "#FEF3C7";
+                      } else if (stockVal <= 12) {
+                        barColor = "#EAB308"; // Yellow
+                        badgeLabel = "Stok Menipis";
+                        badgeColor = "#A16207";
+                        badgeBg = "#FEF9C3";
+                      }
+
+                      return (
+                        <View style={{ marginTop: 8 }}>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                            <View style={{ backgroundColor: badgeBg, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+                              <Text style={{ fontSize: 9, fontWeight: "800", color: badgeColor, textTransform: "uppercase" }}>{badgeLabel}</Text>
+                            </View>
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#475569" }}>
+                              {formatNumberValue(stockVal)} pcs
+                            </Text>
+                          </View>
+                          <View style={{ height: 6, backgroundColor: "#E2E8F0", borderRadius: 3, overflow: "hidden" }}>
+                            <View style={{ width: `${pct}%`, height: "100%", backgroundColor: barColor, borderRadius: 3 }} />
+                          </View>
+                        </View>
+                      );
+                    })()}
                   </View>
                 </View>
 
@@ -952,7 +979,7 @@ export function ItemDetailScreen({ route, navigation }) {
     setLoading(true);
     try {
       const res = await exec(
-        `SELECT id, name, category, price, cost_price, stock FROM items WHERE id = ?`,
+        `SELECT id, name, category, price, cost_price, stock, size FROM items WHERE id = ?`,
         [selectedItemId],
       );
       if (!res.rows.length) {
@@ -969,6 +996,7 @@ export function ItemDetailScreen({ route, navigation }) {
         price: Number(row.price ?? 0),
         costPrice: Number(row.cost_price ?? 0),
         stock: Number(row.stock ?? 0),
+        size: row.size || null,
       };
       setItem(nextItem);
       const historyRes = await exec(
@@ -1188,9 +1216,12 @@ export function ItemDetailScreen({ route, navigation }) {
           }}
         >
           <Text style={{ fontSize: 22, fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
-          <Text style={{ color: "#64748B", marginTop: 6 }}>{categoryDisplay}</Text>
+          <Text style={{ color: "#64748B", marginTop: 6 }}>
+            {categoryDisplay}{item.size ? ` • Ukuran ${item.size}` : ""}
+          </Text>
           <View style={{ marginTop: 18, gap: 12 }}>
             <DetailRow label="Kategori" value={categoryDisplay} />
+            <DetailRow label="Ukuran" value={item.size || "-"} />
             <DetailRow label="Harga Jual" value={priceDisplay} />
             <DetailRow label="Harga Modal" value={costDisplay} />
             <DetailRow label="Stok" value={stockDisplay} />
@@ -1474,17 +1505,20 @@ export function AddItemScreen({ route, navigation }) {
   const [itemId, setItemId] = useState(initialItem?.id ?? null);
   const [name, setName] = useState(initialItem?.name ?? "");
   const [category, setCategory] = useState(initialItem?.category ?? "");
+  const [size, setSize] = useState(initialItem?.size ?? "");
   const [price, setPrice] = useState(initialItem ? formatNumberInput(String(initialItem.price ?? "")) : "");
   const [costPrice, setCostPrice] = useState(
     initialItem ? formatNumberInput(String(initialItem.costPrice ?? "")) : "",
   );
   const [stock, setStock] = useState(initialItem ? formatNumberInput(String(initialItem.stock ?? "")) : "");
+  const scrollRef = React.useRef(null);
 
   useEffect(() => {
     if (initialItem) {
       setItemId(initialItem.id);
       setName(initialItem.name || "");
       setCategory(initialItem.category || "");
+      setSize(initialItem.size || "");
       setPrice(formatNumberInput(String(initialItem.price ?? "")));
       setCostPrice(formatNumberInput(String(initialItem.costPrice ?? "")));
       setStock(formatNumberInput(String(initialItem.stock ?? "")));
@@ -1498,6 +1532,7 @@ export function AddItemScreen({ route, navigation }) {
     setItemId(null);
     setName("");
     setCategory("");
+    setSize("");
     setPrice("");
     setCostPrice("");
     setStock("");
@@ -1513,13 +1548,13 @@ export function AddItemScreen({ route, navigation }) {
     const s = parseNumberInput(stock);
     if (isEdit) {
       await exec(
-        `UPDATE items SET name = ?, category = ?, price = ?, cost_price = ?, stock = ? WHERE id = ?`,
-        [name, category, p, c, s, itemId],
+        `UPDATE items SET name = ?, category = ?, price = ?, cost_price = ?, stock = ?, size = ? WHERE id = ?`,
+        [name, category, p, c, s, size, itemId],
       );
     } else {
       const insertRes = await exec(
-        `INSERT INTO items(name, category, price, cost_price, stock) VALUES (?,?,?,?,?)`,
-        [name, category, p, c, s],
+        `INSERT INTO items(name, category, price, cost_price, stock, size) VALUES (?,?,?,?,?,?)`,
+        [name, category, p, c, s, size],
       );
       if (s > 0) {
         const id = insertRes.insertId;
@@ -1535,18 +1570,54 @@ export function AddItemScreen({ route, navigation }) {
     navigation.goBack();
   }
 
+  const categoryPresets = ["Baju", "Celana", "Gamis", "Pakaian Dalam"];
+  const sizePresets = ["XS", "S", "M", "L", "XL", "XXL"];
+
+  const renderPresetChips = (presets, currentValue, onSelect) => {
+    return (
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 6, marginBottom: 12 }}>
+        {presets.map(item => {
+          const isSelected = currentValue === item;
+          return (
+            <TouchableOpacity
+              key={item}
+              activeOpacity={0.7}
+              onPress={() => onSelect(item)}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 20,
+                backgroundColor: isSelected ? "#0D9488" : "#E2E8F0",
+                borderWidth: 1,
+                borderColor: isSelected ? "#0D9488" : "#CBD5E1",
+              }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "700", color: isSelected ? "#fff" : "#475569" }}>
+                {item}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F1F5F9" }}>
-      <FormScrollContainer contentContainerStyle={{ paddingBottom: 24 }}>
+      <FormScrollContainer ref={scrollRef} contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>{isEdit ? "Edit Barang" : "Tambah Barang"}</Text>
         <Input label="Nama" value={name} onChangeText={setName} placeholder="contoh: Kardus 40x40" />
-        <Input label="Kategori" value={category} onChangeText={setCategory} placeholder="contoh: Kemasan" />
+        <Input label="Kategori" value={category} onChangeText={setCategory} placeholder="Pilih kategori di bawah atau ketik manual..." />
+        {renderPresetChips(categoryPresets, category, setCategory)}
+        <Input label="Ukuran" value={size} onChangeText={setSize} placeholder="Pilih ukuran di bawah atau ketik manual..." />
+        {renderPresetChips(sizePresets, size, setSize)}
         <Input
           label="Harga (Rp)"
           value={price}
           onChangeText={text => setPrice(formatNumberInput(text))}
           keyboardType="numeric"
           placeholder="contoh: 125000"
+          onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
         />
         <Input
           label="Harga Modal (Rp)"
@@ -1554,6 +1625,7 @@ export function AddItemScreen({ route, navigation }) {
           onChangeText={text => setCostPrice(formatNumberInput(text))}
           keyboardType="numeric"
           placeholder="contoh: 90000"
+          onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
         />
         <Input
           label="Stok"
@@ -1561,6 +1633,7 @@ export function AddItemScreen({ route, navigation }) {
           onChangeText={text => setStock(formatNumberInput(text))}
           keyboardType="numeric"
           placeholder="contoh: 100"
+          onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
         />
         <TouchableOpacity
           onPress={save}

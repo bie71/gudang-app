@@ -14,7 +14,9 @@ import {
   getNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
-  checkAndGenerateAlerts
+  checkAndGenerateAlerts,
+  deleteNotification,
+  deleteAllNotifications
 } from "../services/notifications";
 
 export default function NotificationsScreen({ navigation }) {
@@ -38,37 +40,7 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   useEffect(() => {
-    async function setupDemo() {
-      try {
-        const { exec } = require("../services/database");
-        const today = new Date();
-        const prevMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const prevYear = prevMonthDate.getFullYear();
-        const prevMonth = String(prevMonthDate.getMonth() + 1).padStart(2, "0");
-        const prevMonthStr = `${prevYear}-${prevMonth}`;
-
-        const checkRes = await exec("SELECT COUNT(*) as count FROM bookkeeping_entries WHERE entry_date LIKE ?", [`${prevMonthStr}%`]);
-        if (checkRes.rows.item(0).count === 0) {
-          // Tambahkan data demo kas bulan lalu
-          await exec("INSERT INTO bookkeeping_entries (name, amount, entry_date, note) VALUES (?, ?, ?, ?)", [
-            "Penjualan Grosir Toko (Demo)", 12500000, `${prevMonthStr}-12`, "Pemasukan demo untuk perhitungan bulanan"
-          ]);
-          await exec("INSERT INTO bookkeeping_entries (name, amount, entry_date, note) VALUES (?, ?, ?, ?)", [
-            "Belanja Supplier Bahan Baku (Demo)", -5400000, `${prevMonthStr}-18`, "Pengeluaran demo belanja bahan baku"
-          ]);
-          await exec("INSERT INTO bookkeeping_entries (name, amount, entry_date, note) VALUES (?, ?, ?, ?)", [
-            "Biaya Listrik & Operasional (Demo)", -600000, `${prevMonthStr}-25`, "Pengeluaran demo biaya bulanan"
-          ]);
-          console.log("DEMO DATA KEUANGAN BULANAN BERHASIL DIBUAT UNTUK:", prevMonthStr);
-        }
-      } catch (err) {
-        console.log("Error setting up bookkeeping demo:", err);
-      }
-    }
-    
-    setupDemo().then(() => {
-      loadNotifications(true);
-    });
+    loadNotifications(true);
   }, []);
 
   const handleRefresh = () => {
@@ -84,6 +56,50 @@ export default function NotificationsScreen({ navigation }) {
     } catch (error) {
       Alert.alert("Gagal", "Gagal memperbarui status notifikasi.");
     }
+  };
+
+  const handleDeleteNotification = async (id) => {
+    Alert.alert(
+      "Hapus Notifikasi",
+      "Apakah Anda yakin ingin menghapus notifikasi ini?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteNotification(id);
+              await loadNotifications(false);
+            } catch (error) {
+              Alert.alert("Gagal", "Gagal menghapus notifikasi.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteAll = async () => {
+    Alert.alert(
+      "Hapus Semua",
+      "Apakah Anda yakin ingin menghapus semua notifikasi?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAllNotifications();
+              await loadNotifications(false);
+            } catch (error) {
+              Alert.alert("Gagal", "Gagal menghapus semua notifikasi.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleNotificationPress = async (item) => {
@@ -140,9 +156,19 @@ export default function NotificationsScreen({ navigation }) {
           <Text style={styles.itemMessage} numberOfLines={3}>
             {cleanMessage}
           </Text>
-          <Text style={styles.itemTime}>
-            {item.created_at}
-          </Text>
+          <View style={styles.footerRow}>
+            <Text style={styles.itemTime}>
+              {item.created_at}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => handleDeleteNotification(item.id)}
+              style={styles.itemDeleteButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -152,13 +178,22 @@ export default function NotificationsScreen({ navigation }) {
     <SafeAreaView edges={["top", "left", "right"]} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ width: 80 }}>
+        <View style={{ width: 120 }}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.goBack()} style={styles.headerButton}>
             <Ionicons name="arrow-back" size={24} color="#0F172A" />
           </TouchableOpacity>
         </View>
         <Text style={styles.headerTitle}>Pemberitahuan</Text>
-        <View style={{ width: 80, alignItems: "flex-end" }}>
+        <View style={{ width: 120, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+          {notifications.length > 0 && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleDeleteAll}
+              style={styles.headerIconButton}
+            >
+              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleMarkAllRead}
@@ -316,6 +351,22 @@ const styles = StyleSheet.create({
   itemTime: {
     fontSize: 11,
     color: "#94A3B8"
+  },
+  footerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4
+  },
+  itemDeleteButton: {
+    padding: 4
+  },
+  headerIconButton: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center"
   },
   emptyContainer: {
     flex: 1,

@@ -101,7 +101,7 @@ export async function checkAndGenerateAlerts() {
           if (existsRes.rows.item(0).count === 0) {
             await addNotification(
               "Barang PO Ready Besok",
-              `Pesanan PO #${po.id} ("${po.item_name}" sebanyak ${po.quantity} pcs) diestimasikan siap dikirim/diambil besok pada tanggal ${po.estimated_ready_date} dari pemasok ${po.supplier_name || "-"}. Mohon persiapkan penerimaan barang dan pembukuan kas. ${signature}`,
+              `Pesanan PO #${po.id} ("${po.item_name}" sebanyak ${po.quantity} pcs) diestimasikan siap dikirim/diambil besok pada tanggal ${po.estimated_ready_date} dari pemasok ${po.supplier_name || "-"}. Harap persiapkan penerimaan barang dengan baik. ${signature}`,
               "po"
             );
           }
@@ -181,5 +181,25 @@ export async function checkAndGenerateAlerts() {
     }
   } catch (error) {
     console.log("Error checking alerts:", error);
+  }
+}
+
+// Menghapus satu notifikasi berdasarkan ID
+export async function deleteNotification(id) {
+  try {
+    await exec("DELETE FROM notifications WHERE id = ?", [id]);
+  } catch (error) {
+    console.log("Error deleting notification:", error);
+    throw error;
+  }
+}
+
+// Menghapus semua notifikasi
+export async function deleteAllNotifications() {
+  try {
+    await exec("DELETE FROM notifications");
+  } catch (error) {
+    console.log("Error deleting all notifications:", error);
+    throw error;
   }
 }

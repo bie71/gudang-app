@@ -3,15 +3,19 @@
 Aplikasi gudang **offline-first** untuk input barang, stok masuk/keluar, riwayat transaksi, dan dashboard metrik.
 
 ## ✨ Fitur
-- **Manajemen Inventori (Barang):** CRUD barang (nama, kategori, harga modal, harga jual, stok) & stok masuk (IN) / keluar (OUT) + riwayat mutasi stok.
-- **Purchase Order (PO):** Pemesanan barang ke supplier, detail pemesan, item barang belanjaan, estimasi tanggal Close PO & tanggal barang Ready, dan pelacakan status PO (Progress/Done).
-- **Pembukuan (Keuangan/Kas):** Pencatatan pemasukan dan pengeluaran kas toko secara terperinci beserta log perubahan data.
+- **Manajemen Inventori & Stok Visual (Gudang):** CRUD barang (nama, kategori, ukuran, harga modal, harga jual, stok) & stok masuk (IN) / keluar (OUT) + riwayat mutasi stok.
+- **Bilah Progres Level Stok & Status Badge:** Tampilan visual dinamis tingkat keamanan stok (Habis, Kritis, Menipis, Aman) dengan bar warna-warni (Merah, Amber, Kuning, Hijau) pada daftar Gudang dan Dashboard utama.
+- **Menu Pintas Floating Action Button (FAB):** Akses cepat ke aksi utama (Tambah Barang, Buat PO, Catat Kas, Laporan) dengan overlay backdrop gelap beranimasi elegan di Dashboard.
+- **Asisten Bisnis Pintar (AI Consultant):** Penghitungan otomatis persentase Margin Profit Bersih dari omzet penjualan riil (barang keluar + PO selesai) secara offline, lengkap dengan rekomendasi strategi dan tips bisnis taktis.
+- **Purchase Order (PO) & Analitik Terintegrasi:** Pemesanan barang ke supplier, detail pemesan, item barang belanjaan, estimasi tanggal Close PO & tanggal barang Ready, pelacakan status PO (Progress/Done/Cancelled), visual rasio status PO, spend leaders supplier, serta jadwal ready PO yang dapat diklik langsung ke detail PO.
+- **Pembukuan (Keuangan/Kas):** Pencatatan pemasukan dan pengeluaran kas toko secara terperinci (general ledger) beserta log perubahan data.
 - **Kalkulator Biaya:** Penghitungan harga pokok penjualan (HPP) mencakup ongkir, pajak, dan biaya lainnya secara dinamis.
 - **Integrasi Google Sheets Async (Two-Way Sync):**
-  - Pembuatan otomatis spreadsheet di Google Drive pengguna dengan 4 tab terpisah (`Barang`, `PO`, `Keuangan`, `Kalkulator`).
+  - Pembuatan otomatis spreadsheet di Google Drive pengguna dengan 4 tab terpisah (`Barang`, `PO`, `Keuangan`, `Kalkulator`), lengkap dengan kolom `Ukuran`.
   - Sinkronisasi otomatis di latar belakang (background async) setiap kali pengguna melakukan aktivitas CRUD lokal.
   - Sinkronisasi dua arah (Two-Way Sync) per modul maupun global untuk menyamakan data lokal dengan cloud.
   - Deteksi tab dinamis dengan gesture tarik ke bawah (**Pull-to-Refresh**) di layar Google Sheets CRUD.
+- **Laporan PDF & CSV Pintar:** Ekspor data barang dan riwayat mutasi stok lengkap dengan kolom baru (`Ukuran`), serta pencetakan PDF ringkasan riwayat barang dengan kombinasi badge Kategori & Ukuran.
 - **Sistem Notifikasi & Alert Pintar (Lonceng):**
   * **Badge Riwayat Aktif:** Badge lingkaran merah real-time dengan jumlah angka pemberitahuan belum dibaca di Dashboard.
   * **Peringatan Stok Habis:** Otomatis mengingatkan jika stok barang bernilai `0` pcs agar segera melakukan pemesanan ulang (PO).
@@ -19,7 +23,8 @@ Aplikasi gudang **offline-first** untuk input barang, stok masuk/keluar, riwayat
   * **Pengingat Harian Kas (Daily Reminder):** Mengingatkan pengguna setiap malam jika belum mencatat transaksi kas hari ini.
   * **Laporan Ringkasan Bulanan Keuangan:** Rekapitulasi bulanan otomatis yang menghitung total pemasukan, pengeluaran, dan surplus/defisit kas bulan lalu.
   * **Pop-Up Detail & Baca Semua:** Kemudahan membaca detail lengkap via pop-up alert dialog dan opsi menandai semua notifikasi terbaca.
-- **Desain Modern & Splash Screen:** Antarmuka responsif dan estetis berbasis HSL modern.
+- **Form Keamanan Keyboard (FormScrollContainer):** Form dinamis dengan safe auto-scroll on focus agar kolom input terbawah (Stok, Harga, Catatan) tidak terhalang keyboard.
+- **Splash Screen Premium & Loader:** Splash screen gelap dengan transisi logo membesar, indikator loading, dan byline custom **`BY BIE7`** (durasi 1.5 detik).
 
 ## 🧰 Requirement
 - **Node.js** LTS (18+/20+)
@@ -54,7 +59,8 @@ CREATE TABLE IF NOT EXISTS items(
   category TEXT,
   price INTEGER NOT NULL DEFAULT 0,      -- Harga Jual
   cost_price INTEGER NOT NULL DEFAULT 0, -- Harga Modal (HPP)
-  stock INTEGER NOT NULL DEFAULT 0
+  stock INTEGER NOT NULL DEFAULT 0,
+  size TEXT                              -- Ukuran (XS, S, M, L, XL, XXL atau Manual)
 );
 
 -- Riwayat Pergerakan Stok

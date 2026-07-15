@@ -3,12 +3,12 @@
     "scheme": "bukutoko",
     "name": "BukuToko",
     "slug": "gudang-app",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "android": {
       "package": "com.company.gudang",
-      "versionCode": 17,
+      "versionCode": 18,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"

@@ -88,6 +88,7 @@ export default function DashboardScreen({ navigation }) {
   const [detailHasMore, setDetailHasMore] = useState(false);
   const [detailSearch, setDetailSearch] = useState("");
   const [detailSearchInput, setDetailSearchInput] = useState("");
+  const [isFabOpen, setIsFabOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("summary");
   const [tooltipTab, setTooltipTab] = useState(null);
   const detailPaging = useRef({ type: null, offset: 0, search: "" });
@@ -622,7 +623,7 @@ export default function DashboardScreen({ navigation }) {
     const cleanSearch = searchVal.trim().toLowerCase();
     try {
       const res = await exec(
-        `SELECT id, name, category, stock, price
+        `SELECT id, name, category, stock, price, size
          FROM items
          WHERE LOWER(name) LIKE ? OR LOWER(IFNULL(category, '')) LIKE ?
          ORDER BY name ASC
@@ -638,6 +639,7 @@ export default function DashboardScreen({ navigation }) {
           category: row.category,
           stock: Number(row.stock ?? 0),
           price: Number(row.price ?? 0),
+          size: row.size || "",
         });
       }
       setGudangSearchResults(results);
@@ -792,7 +794,7 @@ export default function DashboardScreen({ navigation }) {
         WHERE date(created_at) = date('now', 'localtime')
       `);
       const priorityItemsRes = await exec(`
-        SELECT id, name, category, stock, price
+        SELECT id, name, category, stock, price, size
         FROM items
         ORDER BY stock ASC, name ASC
         LIMIT 3
@@ -815,7 +817,7 @@ export default function DashboardScreen({ navigation }) {
         ORDER BY totalItems DESC
       `);
       const topItemsRes = await exec(`
-        SELECT id, name, category, stock, price, (stock * price) as totalValue
+        SELECT id, name, category, stock, price, size, (stock * price) as totalValue
         FROM items
         WHERE stock > 0
         ORDER BY stock DESC, name ASC
@@ -957,6 +959,7 @@ export default function DashboardScreen({ navigation }) {
           stock: Number(row.stock ?? 0),
           price: Number(row.price ?? 0),
           totalValue: Number(row.totalValue ?? 0),
+          size: row.size || "",
         });
       }
 
@@ -1043,6 +1046,7 @@ export default function DashboardScreen({ navigation }) {
           category: row.category,
           stock: Number(row.stock ?? 0),
           price: Number(row.price ?? 0),
+          size: row.size || "",
         });
       }
 
@@ -2347,7 +2351,7 @@ export default function DashboardScreen({ navigation }) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: "700", color: "#0F172A" }}>{item.name}</Text>
-              <Text style={{ color: "#64748B", fontSize: 12 }}>{`${item.category || "Tanpa kategori"} • ${formatNumber(item.stock)} stok`}</Text>
+              <Text style={{ color: "#64748B", fontSize: 12 }}>{`${item.category || "Tanpa kategori"}${item.size ? ` • Ukuran ${item.size}` : ""} • ${formatNumber(item.stock)} stok`}</Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={{ color: "#0F172A", fontWeight: "700" }}>{formatCurrency(item.totalValue)}</Text>
@@ -2735,6 +2739,162 @@ export default function DashboardScreen({ navigation }) {
     return `${dayName}, ${date} ${monthName} ${year}`;
   };
 
+  const renderFloatingActionButton = () => {
+    const menuItems = [
+      {
+        icon: "cube-outline",
+        color: "#0D9488",
+        label: "Tambah Barang",
+        onPress: () => {
+          setIsFabOpen(false);
+          navigation.navigate("AddItem", { onDone: load });
+        }
+      },
+      {
+        icon: "document-text-outline",
+        color: "#EA580C",
+        label: "Buat Order PO",
+        onPress: () => {
+          setIsFabOpen(false);
+          navigation.navigate("AddPurchaseOrder", { onDone: load });
+        }
+      },
+      {
+        icon: "wallet-outline",
+        color: "#10B981",
+        label: "Catat Uang Kas",
+        onPress: () => {
+          setIsFabOpen(false);
+          navigation.navigate("AddBookkeeping");
+        }
+      },
+      {
+        icon: "bar-chart-outline",
+        color: "#4F46E5",
+        label: "Laporan Analisis",
+        onPress: () => {
+          setIsFabOpen(false);
+          navigation.navigate("Analytics");
+        }
+      }
+    ];
+
+    if (!isFabOpen) {
+      return (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setIsFabOpen(true)}
+          style={{
+            position: "absolute",
+            bottom: 24,
+            right: 20,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: "#0D9488",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 6,
+            elevation: 8,
+          }}
+        >
+          <Ionicons name="apps" size={24} color="#fff" />
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setIsFabOpen(false)}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+          }}
+        />
+
+        <View style={{ position: "absolute", bottom: 90, right: 20, alignItems: "flex-end", gap: 14 }}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              activeOpacity={0.85}
+               onPress={item.onPress}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: "#fff",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 10,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 3,
+                  elevation: 3,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#334155" }}>{item.label}</Text>
+              </View>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: item.color,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 3 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  elevation: 5,
+                }}
+              >
+                <Ionicons name={item.icon} size={20} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setIsFabOpen(false)}
+          style={{
+            position: "absolute",
+            bottom: 24,
+            right: 20,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: "#EF4444",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 6,
+            elevation: 8,
+          }}
+        >
+          <Ionicons name="close" size={28} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#0F172A" }}>
       <KeyboardAvoidingView
@@ -2757,6 +2917,9 @@ export default function DashboardScreen({ navigation }) {
               </Text>
             </View>
             <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Analytics")}>
+                <Ionicons name="bar-chart" size={22} color="#38BDF8" />
+              </TouchableOpacity>
               <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("GoogleSheets")}>
                 <Ionicons name="grid" size={22} color="#34A853" />
               </TouchableOpacity>
@@ -2953,19 +3116,52 @@ export default function DashboardScreen({ navigation }) {
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontWeight: "600", color: "#334155" }} numberOfLines={1}>{item.name}</Text>
-                            {item.stock <= 5 && (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 }}>
-                                <Ionicons name="warning" size={10} color="#EF4444" />
-                                <Text style={{ fontSize: 9, fontWeight: "700", color: "#EF4444" }}>
-                                  Stok kritis! Tinggal {item.stock} pcs
-                                </Text>
-                              </View>
-                            )}
+                            <Text style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>
+                              {item.category ? item.category : "Tanpa Kategori"}
+                              {item.size ? ` • Ukuran ${item.size}` : ""}
+                            </Text>
+                            {/* Dashboard Stock Mini Progress Bar */}
+                            {(() => {
+                              const stockVal = Number(item.stock ?? 0);
+                              const maxThreshold = 25;
+                              const pct = Math.min((stockVal / maxThreshold) * 100, 100);
+                              const barColor = stockVal === 0 ? "#EF4444" : stockVal <= 5 ? "#F59E0B" : stockVal <= 12 ? "#EAB308" : "#10B981";
+                              return (
+                                <View style={{ height: 4, backgroundColor: "#E2E8F0", borderRadius: 2, marginTop: 6, overflow: "hidden", width: "80%" }}>
+                                  <View style={{ width: `${pct}%`, height: "100%", backgroundColor: barColor, borderRadius: 2 }} />
+                                </View>
+                              );
+                            })()}
                           </View>
                         </View>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#EF4444" }}>
-                          {item.stock} pcs
-                        </Text>
+                        
+                        {/* Right side Badge */}
+                        {(() => {
+                          const stockVal = Number(item.stock ?? 0);
+                          let badgeBg = "#D1FAE5";
+                          let badgeColor = "#047857";
+                          let label = `${stockVal} pcs`;
+
+                          if (stockVal === 0) {
+                            badgeBg = "#FEE2E2";
+                            badgeColor = "#B91C1C";
+                            label = "Habis";
+                          } else if (stockVal <= 5) {
+                            badgeBg = "#FEF3C7";
+                            badgeColor = "#B45309";
+                            label = `${stockVal} Kritis`;
+                          } else if (stockVal <= 12) {
+                            badgeBg = "#FEF9C3";
+                            badgeColor = "#A16207";
+                            label = `${stockVal} Tipis`;
+                          }
+
+                          return (
+                            <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, minWidth: 65, alignItems: "center" }}>
+                              <Text style={{ fontSize: 10, fontWeight: "800", color: badgeColor }}>{label}</Text>
+                            </View>
+                          );
+                        })()}
                       </TouchableOpacity>
                     );
                   });
@@ -3468,6 +3664,7 @@ export default function DashboardScreen({ navigation }) {
         </Pressable>
       </Modal>
       </KeyboardAvoidingView>
+      {renderFloatingActionButton()}
     </SafeAreaView>
   );
 }
