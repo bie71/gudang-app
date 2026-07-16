@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buku Toko - Dokumentasi Resmi</title>
+  <meta name="description" content="Dokumentasi resmi untuk Buku Toko (Mobile). Aplikasi pencatatan keuangan &amp; stok offline-first berbasis React Native + Expo + SQLite.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  
+  <!-- Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-gudang">
+  <!-- Glowing Background Orbs -->
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+
+  <!-- Header -->
+  <header class="main-header">
+    <div class="header-container">
+      <a href="#" class="logo">
+        <span class="logo-icon">BT</span>
+        <span class="logo-text">Buku <span class="logo-accent">Toko</span></span>
+      </a>
+      <nav class="nav-links">
+        <a href="#overview" class="nav-link">Ikhtisar</a>
+        <a href="#features" class="nav-link">Fitur</a>
+        <a href="#interactive-preview" class="nav-link">Demo Interaktif</a>
+        <a href="#quickstart" class="nav-link">Instalasi</a>
+        <a href="#database" class="nav-link">Database</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com" target="_blank" class="github-btn">
+          <i data-lucide="github"></i>
+          <span>GitHub Repository</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="hero-container">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-text">React Native • Expo • SQLite</span>
+      </div>
+      <h1 class="hero-title">
+        Kelola Inventaris & Stok Secara <span class="gradient-text">Offline-First</span>
+      </h1>
+      <p class="hero-subtitle">
+        Aplikasi pencatatan keuangan &amp; stok pintar berbasis mobile untuk input barang, pelacakan stok masuk/keluar, purchase order (PO), kas keuangan, dan asisten bisnis AI secara mandiri tanpa internet.
+      </p>
+      <div class="hero-ctas">
+        <a href="#interactive-preview" class="btn btn-hero-primary">Lihat Demo Interaktif</a>
+        <a href="#quickstart" class="btn btn-hero-secondary">Panduan Instalasi</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Wrapper -->
+  <main class="content-wrapper">
+
+    <!-- Overview Section -->
+    <section id="overview" class="section overview-grid">
+      <div class="overview-desc-card">
+        <span class="app-tag-badge tag-gudang">Mobile Application</span>
+        <h2>Tentang Buku Toko</h2>
+        <p class="section-lead">
+          Buku Toko adalah aplikasi pencatatan keuangan dan stok barang mobile yang berjalan secara lokal di perangkat Anda. Dibuat dengan arsitektur tangguh untuk memberikan performa instan tanpa latensi server.
+        </p>
+        <div class="tech-stack-pills">
+          <span class="tech-pill"><i data-lucide="code-2"></i>React Native</span>
+          <span class="tech-pill"><i data-lucide="zap"></i>Expo SDK</span>
+          <span class="tech-pill"><i data-lucide="database"></i>SQLite Native</span>
+          <span class="tech-pill"><i data-lucide="refresh-cw"></i>Google Sheets Two-Way Sync</span>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon"><i data-lucide="wifi-off"></i></div>
+          <div class="metric-val">100% Offline-First</div>
+          <div class="metric-label">Data disimpan langsung di SQLite lokal perangkat. Sangat aman dan bebas lag.</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon"><i data-lucide="refresh-cw"></i></div>
+          <div class="metric-val">Cloud Backup Sync</div>
+          <div class="metric-label">Sinkronisasi asinkron dua arah ke Google Sheets untuk backup cloud opsional.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fitur Utama -->
+    <section id="features" class="section">
+      <div class="section-header text-center">
+        <h2 class="section-title">Fitur Unggulan</h2>
+        <p class="section-subtitle">Pencatatan keuangan &amp; inventori toko yang dikemas dalam antarmuka seluler yang modern dan dinamis.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="bar-chart-3"></i></div>
+          <h3>Status Keamanan Stok</h3>
+          <p>Bar progres dinamis dengan klasifikasi status stok yang presisi (Habis, Kritis, Menipis, Aman) dan kode warna visual (Merah, Amber, Kuning, Hijau).</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="file-plus"></i></div>
+          <h3>Purchase Order (PO) & Analitik</h3>
+          <p>Kelola pesanan barang ke supplier, estimasi ready, lacak status PO (Progress/Done/Cancelled), visual spend leaders, serta jadwal barang masuk.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="wallet"></i></div>
+          <h3>Keuangan & Kas Toko</h3>
+          <p>Buku kas keuangan sederhana (General Ledger) untuk memantau pemasukan dan pengeluaran secara lengkap beserta log perubahan data.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="sparkles"></i></div>
+          <h3>AI Business Consultant</h3>
+          <p>Fitur penghitung persentase Margin Profit Bersih offline dari omzet penjualan riil Anda lengkap dengan rekomendasi dan tips bisnis taktis.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="file-spreadsheet"></i></div>
+          <h3>Sync Google Sheets</h3>
+          <p>Pembuatan otomatis spreadsheet di Google Drive untuk tab Barang, PO, Keuangan, dan Kalkulator dengan background async sync.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="bell"></i></div>
+          <h3>Alert Lonceng Pintar</h3>
+          <p>Sistem notifikasi lokal untuk memperingatkan stok habis (0 pcs), pengingat harian kas, alert PO H-1 ready, dan ringkasan keuangan bulanan.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="file-text"></i></div>
+          <h3>Laporan PDF & CSV</h3>
+          <p>Ekspor riwayat barang dan detail mutasi ke PDF ber-badge kategori/ukuran yang rapi, atau ekspor data ke file CSV instan.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="keyboard"></i></div>
+          <h3>Form Scroll Keyboard</h3>
+          <p>Menggunakan custom <code>FormScrollContainer</code> agar form input baris bawah tidak terhalang oleh keyboard di perangkat Android & iOS.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Demo Interaktif -->
+    <section id="interactive-preview" class="section interactive-preview-container">
+      <div class="section-header text-center">
+        <h2 class="section-title">Eksplorasi Demo Aplikasi</h2>
+        <p class="section-subtitle">Rasakan simulasi visual antarmuka premium Buku Toko langsung di bawah ini.</p>
+      </div>
+
+      <div class="mockup-showcase">
+        <div class="mockup-sidebar">
+          <h3>Halaman Dashboard:</h3>
+          <button class="mockup-nav-btn active" data-screen="dashboard">
+            <i data-lucide="layout-dashboard"></i> Dashboard Utama
+          </button>
+          <button class="mockup-nav-btn" data-screen="stok">
+            <i data-lucide="boxes"></i> Daftar Inventori
+          </button>
+          <button class="mockup-nav-btn" data-screen="ai">
+            <i data-lucide="sparkles"></i> AI Consultant
+          </button>
+        </div>
+
+        <div class="mockup-display">
+          <!-- Phone Container -->
+          <div class="phone-mockup">
+            <div class="phone-speaker"></div>
+            <div class="phone-screen">
+              <!-- Status Bar -->
+              <div class="phone-status-bar">
+                <span class="status-time">09:41</span>
+                <div class="status-icons">
+                  <i data-lucide="wifi" style="width:12px;height:12px;"></i>
+                  <i data-lucide="battery" style="width:14px;height:14px;"></i>
+                </div>
+              </div>
+              
+              <!-- Phone Header -->
+              <div class="phone-header">
+                <div class="user-profile">
+                  <div class="avatar">B</div>
+                  <div>
+                    <div class="welcome-text">Halo, Admin</div>
+                    <div class="app-tagline">Buku Toko • Offline</div>
+                  </div>
+                </div>
+                <div class="notification-bell active-bell" id="phone-bell-btn">
+                  <i data-lucide="bell"></i>
+                  <span class="bell-badge">3</span>
+                </div>
+              </div>
+
+              <!-- Screen Contents -->
+              <div class="phone-content-viewport">
+                <!-- SCREEN 1: Dashboard -->
+                <div class="phone-screen-content active" id="phone-screen-dashboard">
+                  <div class="dashboard-stats">
+                    <div class="mini-stat-card">
+                      <span class="stat-title">Omzet Bulan Ini</span>
+                      <span class="stat-value">Rp 12.8M</span>
+                    </div>
+                    <div class="mini-stat-card">
+                      <span class="stat-title">Total Barang</span>
+                      <span class="stat-value">48 Item</span>
+                    </div>
+                  </div>
+
+                  <!-- Stock Alerts Visual list -->
+                  <div class="widget-section">
+                    <h4 class="widget-title">Peringatan Stok Level</h4>
+                    <div class="dashboard-alert-list">
+                      <div class="alert-item red">
+                        <div class="alert-info">
+                          <span class="item-name">Kaos Polos Cotton L</span>
+                          <span class="stock-badge red">Habis (0 pcs)</span>
+                        </div>
+                        <div class="progress-bar-bg"><div class="progress-bar-fill red" style="width: 0%"></div></div>
+                      </div>
+                      <div class="alert-item amber">
+                        <div class="alert-info">
+                          <span class="item-name">Celana Jeans Denim M</span>
+                          <span class="stock-badge amber">Kritis (3 pcs)</span>
+                        </div>
+                        <div class="progress-bar-bg"><div class="progress-bar-fill amber" style="width: 15%"></div></div>
+                      </div>
+                      <div class="alert-item yellow">
+                        <div class="alert-info">
+                          <span class="item-name">Jaket Hoodie XL</span>
+                          <span class="stock-badge yellow">Menipis (8 pcs)</span>
+                        </div>
+                        <div class="progress-bar-bg"><div class="progress-bar-fill yellow" style="width: 45%"></div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- PO Schedules widget -->
+                  <div class="widget-section">
+                    <h4 class="widget-title">Jadwal Ready PO Terdekat</h4>
+                    <div class="po-schedule-card">
+                      <div class="po-schedule-header">
+                        <span class="po-id">PO #104 - Supplier Bandung</span>
+                        <span class="po-status-badge in-progress">Progress</span>
+                      </div>
+                      <p class="po-desc">Kaos Cotton Combat 30s (150 pcs)</p>
+                      <div class="po-date-info">
+                        <i data-lucide="calendar"></i>
+                        <span>Ready: H-1 (Esok Hari)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- SCREEN 2: Daftar Stok -->
+                <div class="phone-screen-content" id="phone-screen-stok">
+                  <div class="search-bar-mock">
+                    <i data-lucide="search"></i>
+                    <span>Cari barang berdasarkan nama/kategori...</span>
+                  </div>
+
+                  <div class="items-list-mock">
+                    <div class="item-row-mock">
+                      <div class="item-meta">
+                        <span class="item-title">Kemeja Flanel Slim</span>
+                        <span class="item-sub">Kategori: Pakaian • Ukuran: L</span>
+                      </div>
+                      <div class="item-stock-action">
+                        <span class="stock-num text-success">45 pcs</span>
+                        <span class="stock-status-badge green">Aman</span>
+                      </div>
+                    </div>
+
+                    <div class="item-row-mock">
+                      <div class="item-meta">
+                        <span class="item-title">Sepatu Sneakers Running</span>
+                        <span class="item-sub">Kategori: Sepatu • Ukuran: 42</span>
+                      </div>
+                      <div class="item-stock-action">
+                        <span class="stock-num text-warning">8 pcs</span>
+                        <span class="stock-status-badge yellow">Menipis</span>
+                      </div>
+                    </div>
+
+                    <div class="item-row-mock">
+                      <div class="item-meta">
+                        <span class="item-title">Topi Snapback Black</span>
+                        <span class="item-sub">Kategori: Aksesoris • Ukuran: All Size</span>
+                      </div>
+                      <div class="item-stock-action">
+                        <span class="stock-num text-danger">0 pcs</span>
+                        <span class="stock-status-badge red">Habis</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- SCREEN 3: AI Consultant -->
+                <div class="phone-screen-content" id="phone-screen-ai">
+                  <div class="ai-header-card">
+                    <div class="ai-spark"><i data-lucide="sparkles"></i> AI Business Advisor</div>
+                    <p>Model asisten offline menghitung persentase margin profit dari omzet penjualan riil Anda.</p>
+                  </div>
+
+                  <div class="ai-chat-bubble">
+                    <div class="chat-sender">AI Consultant</div>
+                    <div class="chat-text">
+                      <strong>Analisis Margin Finansial Anda:</strong><br>
+                      Omzet Riil: <strong>Rp 12.850.000</strong><br>
+                      Margin Profit Bersih: <strong class="text-success">38.4%</strong><br><br>
+                      💡 <strong>Rekomendasi Strategis:</strong><br>
+                      1. Barang dengan status <em>Habis</em> (Topi Snapback) menyumbang 12% profit bulan lalu. Segera selesaikan PO ke Supplier Bandung.<br>
+                      2. Lakukan <em>bundling</em> Kemeja Flanel (stok aman) dengan Jaket Hoodie (menipis) untuk menaikkan average order value.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- FAB Button Overlay -->
+              <div class="fab-container" id="phone-fab">
+                <button class="phone-fab-btn"><i data-lucide="plus"></i></button>
+                <div class="fab-menu-overlay">
+                  <div class="fab-menu-item"><i data-lucide="package-plus"></i> Tambah Barang</div>
+                  <div class="fab-menu-item"><i data-lucide="file-plus"></i> Buat PO Baru</div>
+                  <div class="fab-menu-item"><i data-lucide="dollar-sign"></i> Catat Kas Toko</div>
+                </div>
+              </div>
+
+              <!-- Custom Notification Bell Popup Modal -->
+              <div class="phone-popup-modal" id="bell-popup">
+                <div class="popup-header">
+                  <span>Notifikasi Baru (3)</span>
+                  <button class="close-popup" id="close-bell-popup"><i data-lucide="x"></i></button>
+                </div>
+                <div class="popup-body">
+                  <div class="pop-notif-item">
+                    <strong class="text-danger">⚠️ Stok Habis!</strong>
+                    <p>Topi Snapback Black kini bernilai 0 pcs. Segera buat PO baru.</p>
+                  </div>
+                  <div class="pop-notif-item">
+                    <strong class="text-warning">⏳ PO Jatuh Tempo</strong>
+                    <p>PO #104 Bandung akan ready besok (H-1). Siapkan ruang gudang.</p>
+                  </div>
+                  <div class="pop-notif-item">
+                    <strong class="text-info">📊 Finansial Recap</strong>
+                    <p>Omzet penjualan bulan Juni tercatat Rp 12.8M. Selamat!</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Nav Bar -->
+              <div class="phone-nav-bar">
+                <div class="nav-item active" data-nav-screen="dashboard">
+                  <i data-lucide="layout-dashboard"></i>
+                  <span>Dashboard</span>
+                </div>
+                <div class="nav-item" data-nav-screen="stok">
+                  <i data-lucide="boxes"></i>
+                  <span>Stok</span>
+                </div>
+                <div class="nav-item" data-nav-screen="ai">
+                  <i data-lucide="sparkles"></i>
+                  <span>AI</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panduan Instalasi -->
+    <section id="quickstart" class="section">
+      <div class="section-header text-center">
+        <h2 class="section-title">Panduan Setup & Instalasi</h2>
+        <p class="section-subtitle">Jalankan aplikasi di komputer lokal atau hubungkan perangkat Anda.</p>
+      </div>
+
+      <div class="code-block-container">
+        <div class="code-header">
+          <span>Terminal</span>
+          <button class="copy-code-btn" data-clipboard="npm install && npx expo start">
+            <i data-lucide="copy"></i> Salin
+          </button>
+        </div>
+        <pre><code><span class="code-comment"># Masuk ke folder proyek</span>
+cd mobile/gudang-app
+
+<span class="code-comment"># Pasang dependensi</span>
+npm install
+
+<span class="code-comment"># Jalankan Metro Bundler</span>
+npx expo start</code></pre>
+      </div>
+
+      <div class="quickstart-tips">
+        <div class="tip-card">
+          <h4><i data-lucide="smartphone"></i> Android Emulator</h4>
+          <p>Aktifkan AVD di Android Studio, lalu tekan tombol <strong>"a"</strong> di terminal untuk instalasi dan sinkronisasi otomatis.</p>
+        </div>
+        <div class="tip-card">
+          <h4><i data-lucide="smartphone"></i> Perangkat Fisik (HP)</h4>
+          <p>Pasang aplikasi <strong>Expo Go</strong> di HP Anda, kemudian scan kode QR yang tampil di terminal Anda.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skema Database -->
+    <section id="database" class="section">
+      <div class="section-header text-center">
+        <h2 class="section-title">Skema Database SQLite</h2>
+        <p class="section-subtitle">Tabel-tabel relasional yang otomatis di-build saat aplikasi dijalankan pertama kali.</p>
+      </div>
+
+      <div class="database-tabs-container">
+        <div class="db-tabs">
+          <button class="db-tab-btn active" data-table="items">items</button>
+          <button class="db-tab-btn" data-table="stock_history">stock_history</button>
+          <button class="db-tab-btn" data-table="purchase_orders">purchase_orders</button>
+          <button class="db-tab-btn" data-table="bookkeeping">bookkeeping</button>
+        </div>
+
+        <div class="db-content-viewer">
+          <!-- items table -->
+          <div class="db-table-code active" id="db-table-items">
+            <pre><code><span class="code-keyword">CREATE TABLE</span> items (
+  id <span class="code-type">INTEGER PRIMARY KEY AUTOINCREMENT</span>,
+  name <span class="code-type">TEXT NOT NULL</span>,
+  category <span class="code-type">TEXT</span>,
+  price <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,      <span class="code-comment">-- Harga Jual</span>
+  cost_price <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>, <span class="code-comment">-- Harga Modal (HPP)</span>
+  stock <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,
+  size <span class="code-type">TEXT</span>                              <span class="code-comment">-- Ukuran (XS, S, M, L, XL, XXL)</span>
+);</code></pre>
+          </div>
+
+          <!-- stock_history table -->
+          <div class="db-table-code" id="db-table-stock_history">
+            <pre><code><span class="code-keyword">CREATE TABLE</span> stock_history (
+  id <span class="code-type">INTEGER PRIMARY KEY AUTOINCREMENT</span>,
+  item_id <span class="code-type">INTEGER NOT NULL</span>,
+  type <span class="code-type">TEXT NOT NULL</span>,                    <span class="code-comment">-- 'IN' | 'OUT'</span>
+  qty <span class="code-type">INTEGER NOT NULL</span>,
+  unit_price <span class="code-type">INTEGER</span>,
+  unit_cost <span class="code-type">INTEGER</span>,
+  profit_amount <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,
+  note <span class="code-type">TEXT</span>,
+  created_at <span class="code-type">TEXT NOT NULL DEFAULT (datetime('now','localtime'))</span>,
+  <span class="code-keyword">FOREIGN KEY</span>(item_id) <span class="code-keyword">REFERENCES</span> items(id)
+);</code></pre>
+          </div>
+
+          <!-- purchase_orders table -->
+          <div class="db-table-code" id="db-table-purchase_orders">
+            <pre><code><span class="code-keyword">CREATE TABLE</span> purchase_orders (
+  id <span class="code-type">INTEGER PRIMARY KEY AUTOINCREMENT</span>,
+  supplier_name <span class="code-type">TEXT</span>,
+  orderer_name <span class="code-type">TEXT</span>,
+  item_name <span class="code-type">TEXT NOT NULL</span>,
+  quantity <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,
+  price <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,
+  order_date <span class="code-type">TEXT NOT NULL</span>,
+  status <span class="code-type">TEXT NOT NULL DEFAULT 'PROGRESS'</span>, <span class="code-comment">-- 'PROGRESS' | 'DONE' | 'CANCELLED'</span>
+  note <span class="code-type">TEXT</span>,
+  close_po_date <span class="code-type">TEXT</span>,                      <span class="code-comment">-- Format YYYY-MM-DD</span>
+  estimated_ready_date <span class="code-type">TEXT</span>,               <span class="code-comment">-- Format YYYY-MM-DD</span>
+  completed_at <span class="code-type">TEXT</span>,
+  created_at <span class="code-type">TEXT NOT NULL DEFAULT (datetime('now','localtime'))</span>
+);</code></pre>
+          </div>
+
+          <!-- bookkeeping table -->
+          <div class="db-table-code" id="db-table-bookkeeping">
+            <pre><code><span class="code-keyword">CREATE TABLE</span> bookkeeping_entries (
+  id <span class="code-type">INTEGER PRIMARY KEY AUTOINCREMENT</span>,
+  name <span class="code-type">TEXT NOT NULL</span>,
+  amount <span class="code-type">INTEGER NOT NULL DEFAULT 0</span>,       <span class="code-comment">-- Positif (Masuk), Negatif (Keluar)</span>
+  entry_date <span class="code-type">TEXT NOT NULL</span>,
+  note <span class="code-type">TEXT</span>,
+  created_at <span class="code-type">TEXT NOT NULL DEFAULT (datetime('now','localtime'))</span>
+);</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="main-footer">
+    <div class="footer-container text-center">
+      <p>&copy; 2026 Buku Toko. Dibuat dengan presisi untuk mobile oleh BIE7.</p>
+      <div class="footer-bottom-badge">BY BIE7</div>
+    </div>
+  </footer>
+
+  <!-- Script -->
+  <script src="app.js"></script>
+</body>
+</html>

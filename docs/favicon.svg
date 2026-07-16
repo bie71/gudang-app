@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="gudangGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="#0c1222" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" />
+  <path d="M16 6 L26 11 L16 16 L6 11 Z" fill="url(#gudangGrad)" />
+  <path d="M6 11 L16 16 L16 26 L6 21 Z" fill="#4f46e5" opacity="0.85" />
+  <path d="M26 11 L16 16 L16 26 L26 21 Z" fill="#3b82f6" opacity="0.7" />
+  <path d="M16 6 L21 8.5 L16 11 L11 8.5 Z" fill="#a5b4fc" opacity="0.3" />
+</svg>
