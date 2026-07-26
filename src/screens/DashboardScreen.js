@@ -207,16 +207,17 @@ export default function DashboardScreen({ navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE (
-            ? = ''
-            OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
-            OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
-            OR LOWER(IFNULL(po.note,'')) LIKE ?
-            OR EXISTS (
-              SELECT 1 FROM purchase_order_items search_items
-              WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.note,'')) LIKE ?
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items search_items
+                WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+              )
             )
-          )
           GROUP BY po.id
           ORDER BY po.order_date DESC, po.id DESC
           LIMIT ? OFFSET ?
@@ -265,7 +266,7 @@ export default function DashboardScreen({ navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE po.status = 'PROGRESS'
+          WHERE po.status = 'PROGRESS' AND (po.deleted_at IS NULL OR po.deleted_at = '')
             AND (
               ? = ''
               OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
@@ -322,7 +323,7 @@ export default function DashboardScreen({ navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE po.status = 'CANCELLED'
+          WHERE po.status = 'CANCELLED' AND (po.deleted_at IS NULL OR po.deleted_at = '')
             AND (
               ? = ''
               OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
@@ -378,16 +379,17 @@ export default function DashboardScreen({ navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE (
-            ? = ''
-            OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
-            OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
-            OR LOWER(IFNULL(po.note,'')) LIKE ?
-            OR EXISTS (
-              SELECT 1 FROM purchase_order_items search_items
-              WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
+            AND (
+              ? = ''
+              OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+              OR LOWER(IFNULL(po.note,'')) LIKE ?
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items search_items
+                WHERE search_items.order_id = po.id AND LOWER(search_items.name) LIKE ?
+              )
             )
-          )
           GROUP BY po.id
           ORDER BY total_value DESC, po.order_date DESC, po.id DESC
           LIMIT ? OFFSET ?
@@ -519,7 +521,7 @@ export default function DashboardScreen({ navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE po.status = 'DONE'
+          WHERE po.status = 'DONE' AND (po.deleted_at IS NULL OR po.deleted_at = '')
             AND (
               ? = ''
               OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
@@ -578,13 +580,13 @@ export default function DashboardScreen({ navigation }) {
               (
                 SELECT po2.marketer_name 
                 FROM purchase_orders po2 
-                WHERE po2.orderer_name = po.orderer_name AND po2.marketer_name IS NOT NULL AND po2.marketer_name != '' 
+                WHERE po2.orderer_name = po.orderer_name AND po2.marketer_name IS NOT NULL AND po2.marketer_name != '' AND (po2.deleted_at IS NULL OR po2.deleted_at = '')
                 LIMIT 1
               ) as marketer_name,
               (
                 SELECT po3.supplier_name 
                 FROM purchase_orders po3 
-                WHERE po3.orderer_name = po.orderer_name AND po3.supplier_name IS NOT NULL AND po3.supplier_name != '' 
+                WHERE po3.orderer_name = po.orderer_name AND po3.supplier_name IS NOT NULL AND po3.supplier_name != '' AND (po3.deleted_at IS NULL OR po3.deleted_at = '')
                 LIMIT 1
               ) as supplier_name,
               COUNT(DISTINCT po.id) as total_orders,
@@ -595,6 +597,7 @@ export default function DashboardScreen({ navigation }) {
               ) as overall_rank
             FROM purchase_orders po
             LEFT JOIN purchase_order_items items ON items.order_id = po.id
+            WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
             GROUP BY orderer_name
           )
           SELECT * FROM ranked_orderers
@@ -1352,13 +1355,13 @@ export default function DashboardScreen({ navigation }) {
             (
               SELECT po2.marketer_name 
               FROM purchase_orders po2 
-              WHERE po2.orderer_name = po.orderer_name AND po2.marketer_name IS NOT NULL AND po2.marketer_name != '' 
+              WHERE po2.orderer_name = po.orderer_name AND po2.marketer_name IS NOT NULL AND po2.marketer_name != '' AND (po2.deleted_at IS NULL OR po2.deleted_at = '')
               LIMIT 1
             ) as marketer_name,
             (
               SELECT po3.supplier_name 
               FROM purchase_orders po3 
-              WHERE po3.orderer_name = po.orderer_name AND po3.supplier_name IS NOT NULL AND po3.supplier_name != '' 
+              WHERE po3.orderer_name = po.orderer_name AND po3.supplier_name IS NOT NULL AND po3.supplier_name != '' AND (po3.deleted_at IS NULL OR po3.deleted_at = '')
               LIMIT 1
             ) as supplier_name,
             COUNT(DISTINCT po.id) as total_orders,
@@ -1366,6 +1369,7 @@ export default function DashboardScreen({ navigation }) {
             IFNULL(SUM(items.quantity * items.price), 0) as total_spent
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
           GROUP BY orderer_name
           ORDER BY total_spent DESC, total_orders DESC
           LIMIT 10
