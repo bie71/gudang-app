@@ -56,15 +56,23 @@ async function getValidAccessToken() {
   if (token.refreshToken && clientId) {
     try {
       const refreshed = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
-      return refreshed?.accessToken || token.accessToken || null;
+      if (refreshed?.accessToken) {
+        return refreshed.accessToken;
+      }
     } catch (e) {
       console.log("SYNC TOKEN REFRESH ERROR:", e);
-      if (token.accessToken && !e?.isInvalidGrant) {
-        return token.accessToken;
+      if (e?.isInvalidGrant) {
+        await clearDriveToken();
+        return null;
       }
-      return null;
     }
   }
+
+  if (!isDriveTokenValid(token)) {
+    await clearDriveToken();
+    return null;
+  }
+
   return token.accessToken || null;
 }
 
@@ -74,6 +82,11 @@ async function findSyncFileId(accessToken) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (response.status === 401) {
+    const err = new Error("401 Unauthorized");
+    err.status = 401;
+    throw err;
+  }
   if (!response.ok) return null;
   const json = await response.json();
   if (json.files && json.files.length > 0) {
@@ -87,6 +100,11 @@ async function downloadRemoteSyncData(accessToken, fileId) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (response.status === 401) {
+    const err = new Error("401 Unauthorized");
+    err.status = 401;
+    throw err;
+  }
   if (!response.ok) return null;
   try {
     return await response.json();
@@ -129,6 +147,12 @@ async function uploadSyncDataToDrive(accessToken, fileId, payload) {
     },
     body,
   });
+
+  if (response.status === 401) {
+    const err = new Error("401 Unauthorized");
+    err.status = 401;
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error("Gagal mengunggah data sync ke Google Drive.");
@@ -225,33 +249,41 @@ async function applyMergedDataToLocalDb(mergedTables) {
 export async function performGoogleDriveSync() {
   const accessToken = await getValidAccessToken();
   if (!accessToken) {
-    throw new Error("Akun Google belum terhubung atau token kadaluwarsa.");
+    throw new Error("Sesi Google Drive telah berakhir atau belum terhubung. Silakan login ulang.");
   }
 
-  const fileId = await findSyncFileId(accessToken);
-  let remotePayload = null;
-  if (fileId) {
-    remotePayload = await downloadRemoteSyncData(accessToken, fileId);
-  }
-
-  const localTables = await getLocalTablesData();
-  const mergedTables = mergeTables(localTables, remotePayload);
-
-  // Tulis ke lokal
-  await applyMergedDataToLocalDb(mergedTables);
-
-  // Upload kembali hasil gabungan ke Drive
-  const newPayload = {
-    version: 1,
-    syncedAt: new Date().toISOString(),
-    tables: mergedTables,
-  };
-  await uploadSyncDataToDrive(accessToken, fileId, newPayload);
   try {
-    await SecureStore.setItemAsync(LAST_AUTO_SYNC_KEY, String(Date.now()));
-  } catch (e) {}
+    const fileId = await findSyncFileId(accessToken);
+    let remotePayload = null;
+    if (fileId) {
+      remotePayload = await downloadRemoteSyncData(accessToken, fileId);
+    }
 
-  return { success: true, syncedAt: newPayload.syncedAt };
+    const localTables = await getLocalTablesData();
+    const mergedTables = mergeTables(localTables, remotePayload);
+
+    // Tulis ke lokal
+    await applyMergedDataToLocalDb(mergedTables);
+
+    // Upload kembali hasil gabungan ke Drive
+    const newPayload = {
+      version: 1,
+      syncedAt: new Date().toISOString(),
+      tables: mergedTables,
+    };
+    await uploadSyncDataToDrive(accessToken, fileId, newPayload);
+    try {
+      await SecureStore.setItemAsync(LAST_AUTO_SYNC_KEY, String(Date.now()));
+    } catch (e) {}
+
+    return { success: true, syncedAt: newPayload.syncedAt };
+  } catch (err) {
+    if (err?.status === 401 || err?.message?.includes("401")) {
+      await clearDriveToken();
+      throw new Error("Sesi Google Drive telah berakhir. Silakan login ulang.");
+    }
+    throw err;
+  }
 }
 
 // Otomatisasi 2-Way Sync per 6 Jam

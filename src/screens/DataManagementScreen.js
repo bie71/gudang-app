@@ -80,6 +80,10 @@ export default function DataManagementScreen({ navigation }) {
     scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/spreadsheets"],
     redirectUri,
     shouldAutoExchangeCode: false,
+    extraParams: {
+      access_type: "offline",
+      prompt: "consent",
+    },
   });
 
   useEffect(() => {
@@ -365,6 +369,8 @@ export default function DataManagementScreen({ navigation }) {
       console.log("2-WAY SYNC ERROR:", error);
       Alert.alert("Gagal Sync", error?.message || "Tidak dapat melakukan sinkronisasi saat ini.");
     } finally {
+      const stored = await getStoredDriveToken();
+      setDriveToken(stored);
       setFullSyncing(false);
     }
   }, [fullSyncing, googleLoggedIn]);
