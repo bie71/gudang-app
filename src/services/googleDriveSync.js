@@ -1,8 +1,22 @@
 import { exec } from "./database";
 import { getStoredDriveToken, isDriveTokenValid, refreshDriveAccessToken } from "./googleDrive";
 import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
 
 const SYNC_FILE_NAME = "gudang_app_sync.json";
+const AUTO_SYNC_INTERVAL = 6 * 60 * 60 * 1000; // 6 jam
+const LAST_AUTO_SYNC_KEY = "google_drive_last_auto_sync";
+
+function getClientId() {
+  const expoExtra = Constants?.expoConfig?.extra ?? {};
+  const legacyExtra = Constants?.manifest?.extra ?? {};
+  const extraClients = expoExtra.googleClientIds || legacyExtra.googleClientIds || {};
+  return (
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID ||
+    extraClients.android ||
+    "82888828682-bv5i05acv3emgv6fs4sig8dta4n4m4of.apps.googleusercontent.com"
+  );
+}
 
 const TABLE_LIST = [
   "master_orderers",
@@ -38,18 +52,20 @@ async function getValidAccessToken() {
   if (!token) return null;
   if (isDriveTokenValid(token)) return token.accessToken;
 
-  const expoExtra = Constants?.expoConfig?.extra ?? {};
-  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || expoExtra.googleClientIds?.android;
-  if (token.refreshToken && androidClientId) {
+  const clientId = getClientId();
+  if (token.refreshToken && clientId) {
     try {
-      const refreshed = await refreshDriveAccessToken({ clientId: androidClientId, refreshToken: token.refreshToken });
-      return refreshed?.accessToken || null;
+      const refreshed = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
+      return refreshed?.accessToken || token.accessToken || null;
     } catch (e) {
       console.log("SYNC TOKEN REFRESH ERROR:", e);
+      if (token.accessToken && !e?.isInvalidGrant) {
+        return token.accessToken;
+      }
       return null;
     }
   }
-  return null;
+  return token.accessToken || null;
 }
 
 // Cari ID file gudang_app_sync.json di Drive
@@ -231,6 +247,34 @@ export async function performGoogleDriveSync() {
     tables: mergedTables,
   };
   await uploadSyncDataToDrive(accessToken, fileId, newPayload);
+  try {
+    await SecureStore.setItemAsync(LAST_AUTO_SYNC_KEY, String(Date.now()));
+  } catch (e) {}
 
   return { success: true, syncedAt: newPayload.syncedAt };
+}
+
+// Otomatisasi 2-Way Sync per 6 Jam
+export async function checkAndAutoSync() {
+  try {
+    const token = await getStoredDriveToken();
+    if (!token) return; // Skip jika belum terhubung / login
+
+    const lastSyncRaw = await SecureStore.getItemAsync(LAST_AUTO_SYNC_KEY);
+    const now = Date.now();
+    if (lastSyncRaw) {
+      const lastSyncTime = parseInt(lastSyncRaw, 10);
+      if (now - lastSyncTime < AUTO_SYNC_INTERVAL) {
+        return; // Belum 6 jam, skip
+      }
+    }
+
+    console.log("AUTOMATIC 6-HOUR SYNC: Executing...");
+    const res = await performGoogleDriveSync();
+    if (res?.success) {
+      console.log("AUTOMATIC 6-HOUR SYNC: Successfully synced at", res.syncedAt);
+    }
+  } catch (err) {
+    console.log("AUTOMATIC 6-HOUR SYNC FAILED:", err?.message || err);
+  }
 }

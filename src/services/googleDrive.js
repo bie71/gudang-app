@@ -108,6 +108,7 @@ export async function refreshDriveAccessToken({ clientId, refreshToken }) {
     const error = new Error(json?.error_description || json?.error || "Gagal menyegarkan token Google Drive.");
     error.status = response.status;
     error.data = json;
+    error.isInvalidGrant = json?.error === "invalid_grant" || json?.error === "unauthorized_client";
     throw error;
   }
 

@@ -46,7 +46,9 @@ export async function getSheetsAccessToken() {
         token = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
       } catch (error) {
         console.log("GOOGLE SHEETS REFRESH ACCESS TOKEN ERROR:", error);
-        await clearDriveToken();
+        if (error?.isInvalidGrant) {
+          await clearDriveToken();
+        }
         throw new Error("Sesi login Google Anda telah berakhir. Silakan login kembali di menu Manajemen Data.");
       }
     } else {

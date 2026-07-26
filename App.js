@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import RootNavigator from "./src/navigation/RootNavigator";
 import { initDb } from "./src/services/database";
-
+import { checkAndAutoSync } from "./src/services/googleDriveSync";
 
 export default function App() {
   const [isSplashLoading, setIsSplashLoading] = useState(true);
@@ -14,11 +14,20 @@ export default function App() {
   useEffect(() => {
     initDb().catch(error => console.log("DB INIT ERROR:", error));
 
+    // Jalankan pemeriksaan sync otomatis per 6 jam
+    checkAndAutoSync().catch(err => console.log("AUTO SYNC INIT ERROR:", err));
+    const syncInterval = setInterval(() => {
+      checkAndAutoSync().catch(err => console.log("AUTO SYNC INTERVAL ERROR:", err));
+    }, 15 * 60 * 1000);
+
     const timer = setTimeout(() => {
       setIsSplashLoading(false);
     }, 1500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(syncInterval);
+    };
   }, []);
 
   if (isSplashLoading) {
