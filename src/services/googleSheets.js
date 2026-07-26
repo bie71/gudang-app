@@ -217,6 +217,48 @@ export async function deleteSheetRow(spreadsheetId, sheetName, rowIndexZeroBased
   return await response.json();
 }
 
+export async function deleteMultipleSheetRows(spreadsheetId, sheetName, rowIndicesZeroBased) {
+  if (!rowIndicesZeroBased || rowIndicesZeroBased.length === 0) return;
+  
+  const token = await getSheetsAccessToken();
+  const sheets = await getSheetProperties(spreadsheetId);
+  const sheet = sheets.find(s => s.properties.title.toLowerCase() === sheetName.toLowerCase());
+  
+  if (!sheet) {
+    throw new Error(`Sheet dengan nama "${sheetName}" tidak ditemukan.`);
+  }
+
+  const sheetId = sheet.properties.sheetId;
+  const sortedIndices = [...rowIndicesZeroBased].sort((a, b) => b - a);
+
+  const requests = sortedIndices.map(idx => ({
+    deleteDimension: {
+      range: {
+        sheetId: sheetId,
+        dimension: "ROWS",
+        startIndex: idx,
+        endIndex: idx + 1,
+      },
+    },
+  }));
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ requests }),
+  });
+
+  if (!response.ok) {
+    await handleSheetsResponseError(response, "menghapus beberapa baris data di Sheet");
+  }
+
+  return await response.json();
+}
+
 // Membuat spreadsheet baru otomatis dengan 4 sheet (tab) untuk masing-masing fitur
 export async function createAutoSpreadsheet() {
   const token = await getSheetsAccessToken();

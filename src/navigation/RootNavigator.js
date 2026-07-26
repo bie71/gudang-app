@@ -57,7 +57,7 @@ export default function RootNavigator() {
       <Stack.Screen
         name="GoogleSheets"
         component={GoogleSheetsScreen}
-        options={{ title: "Google Sheets CRUD", headerShown: false }}
+        options={{ title: "Google Sheets", headerShown: false }}
       />
       <Stack.Screen
         name="Notifications"

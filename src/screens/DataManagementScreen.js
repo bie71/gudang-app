@@ -550,7 +550,7 @@ export default function DataManagementScreen({ navigation }) {
 
         <Button
           icon="grid-outline"
-          label="Google Sheets CRUD"
+          label="Google Sheets"
           subtitle="Lihat, tambah, ubah, dan hapus baris spreadsheet secara langsung."
           color="#0D9488"
           onPress={() => navigation.navigate("GoogleSheets")}

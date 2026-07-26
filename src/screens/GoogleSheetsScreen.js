@@ -23,6 +23,7 @@ import {
   appendSheetRow,
   updateSheetRow,
   deleteSheetRow,
+  deleteMultipleSheetRows,
   createAutoSpreadsheet,
   syncAllModulesData,
   getSpreadsheetSheets
@@ -37,6 +38,11 @@ export default function GoogleSheetsScreen({ navigation }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+
+  // Selection & Bulk Delete States
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Data States
   const [headers, setHeaders] = useState([]);
@@ -371,6 +377,7 @@ export default function GoogleSheetsScreen({ navigation }) {
   const renderRowItem = ({ item, index }) => {
     // Find absolute index of this item in the main list
     const originalIndex = rows.indexOf(item);
+    const isSelected = selectedIndices.includes(originalIndex);
     
     // We treat the first column as Title
     const title = item[0] || "(Tanpa Judul)";
@@ -382,14 +389,26 @@ export default function GoogleSheetsScreen({ navigation }) {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => openEditModal(item, originalIndex)}
+        onPress={() => {
+          if (selectionMode) {
+            toggleRowSelection(originalIndex);
+          } else {
+            openEditModal(item, originalIndex);
+          }
+        }}
+        onLongPress={() => {
+          if (!selectionMode) {
+            setSelectionMode(true);
+            setSelectedIndices([originalIndex]);
+          }
+        }}
         style={{
-          backgroundColor: "#fff",
+          backgroundColor: isSelected ? "#F0FDF4" : "#fff",
           borderRadius: 16,
           padding: 16,
           marginBottom: 12,
-          borderWidth: 1,
-          borderColor: "#E2E8F0",
+          borderWidth: isSelected ? 2 : 1,
+          borderColor: isSelected ? "#0D9488" : "#E2E8F0",
           shadowColor: "#0F172A",
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.03,
@@ -398,12 +417,24 @@ export default function GoogleSheetsScreen({ navigation }) {
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-          <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", flex: 1, marginRight: 8 }}>
-            {title}
-          </Text>
-          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="create-outline" size={16} color="#0D9488" />
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+            {selectionMode && (
+              <Ionicons
+                name={isSelected ? "checkbox" : "square-outline"}
+                size={22}
+                color={isSelected ? "#0D9488" : "#94A3B8"}
+                style={{ marginRight: 10 }}
+              />
+            )}
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A", flex: 1 }}>
+              {title}
+            </Text>
           </View>
+          {!selectionMode && (
+            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="create-outline" size={16} color="#0D9488" />
+            </View>
+          )}
         </View>
 
         <View style={{ gap: 4 }}>
@@ -441,7 +472,7 @@ export default function GoogleSheetsScreen({ navigation }) {
             Akun Google Belum Terhubung
           </Text>
           <Text style={{ color: "#64748B", textAlign: "center", lineHeight: 20, marginBottom: 28 }}>
-            Fitur Google Sheet CRUD memerlukan izin akses spreadsheet Google Anda. Hubungkan akun Google Anda terlebih dahulu di menu Manajemen Data.
+            Fitur Google Sheets memerlukan izin akses spreadsheet Google Anda. Hubungkan akun Google Anda terlebih dahulu di menu Manajemen Data.
           </Text>
           
           <TouchableOpacity
@@ -470,43 +501,112 @@ export default function GoogleSheetsScreen({ navigation }) {
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#fff" }}>
       <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
         {/* Top Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          backgroundColor: "#fff",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E2E8F0"
-        }}
-      >
-        <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.goBack()} style={{ padding: 4 }}>
-          <Ionicons name="arrow-back" size={24} color="#0F172A" />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 16 }}>
-          <Text style={{ fontSize: 18, fontWeight: "800", color: "#0F172A" }}>Google Sheets CRUD</Text>
-          <Text style={{ fontSize: 12, color: "#64748B", marginTop: 2 }} numberOfLines={1}>
-            {spreadsheetId ? `Sheet: ${sheetName}` : "Belum Dikonfigurasi"}
-          </Text>
-        </View>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={handleGlobalSync}
-          disabled={loading || globalSyncing}
-          style={{ padding: 4, marginRight: 12, opacity: (loading || globalSyncing) ? 0.6 : 1 }}
-        >
-          {globalSyncing ? (
-            <ActivityIndicator size="small" color="#0D9488" />
-          ) : (
-            <Ionicons name="sync-outline" size={24} color="#0D9488" />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => setIsConfigOpen(true)} style={{ padding: 4 }}>
-          <Ionicons name="options-outline" size={24} color="#0D9488" />
-        </TouchableOpacity>
-      </View>
+        {selectionMode ? (
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              backgroundColor: "#CCFBF1",
+              borderBottomWidth: 1,
+              borderBottomColor: "#99F6E4",
+            }}
+          >
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                setSelectionMode(false);
+                setSelectedIndices([]);
+              }}
+              style={{ padding: 4 }}
+            >
+              <Ionicons name="close" size={24} color="#0F172A" />
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>
+              {selectedIndices.length} Dipilih
+            </Text>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleSelectAll}
+                style={{ paddingVertical: 6, paddingHorizontal: 10, backgroundColor: "#fff", borderRadius: 8, borderWidth: 1, borderColor: "#0D9488" }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#0D9488" }}>
+                  {selectedIndices.length === filteredAllRows.map(r => rows.indexOf(r)).length ? "Batal Semua" : "Pilih Semua"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleBulkDelete}
+                disabled={selectedIndices.length === 0 || bulkDeleting}
+                style={{
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  backgroundColor: selectedIndices.length > 0 ? "#EF4444" : "#CBD5E1",
+                  borderRadius: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  opacity: bulkDeleting ? 0.7 : 1,
+                }}
+              >
+                {bulkDeleting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={16} color="#fff" />
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>
+                      Hapus ({selectedIndices.length})
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              backgroundColor: "#fff",
+              borderBottomWidth: 1,
+              borderBottomColor: "#E2E8F0"
+            }}
+          >
+            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+            </TouchableOpacity>
+            <View style={{ flex: 1, marginLeft: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: "#0F172A" }}>Google Sheets</Text>
+              <Text style={{ fontSize: 12, color: "#64748B", marginTop: 2 }} numberOfLines={1}>
+                {spreadsheetId ? `Sheet: ${sheetName}` : "Belum Dikonfigurasi"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleGlobalSync}
+              disabled={loading || globalSyncing}
+              style={{ padding: 4, marginRight: 12, opacity: (loading || globalSyncing) ? 0.6 : 1 }}
+            >
+              {globalSyncing ? (
+                <ActivityIndicator size="small" color="#0D9488" />
+              ) : (
+                <Ionicons name="sync-outline" size={24} color="#0D9488" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setIsConfigOpen(true)} style={{ padding: 4 }}>
+              <Ionicons name="options-outline" size={24} color="#0D9488" />
+            </TouchableOpacity>
+          </View>
+        )}
 
       {/* Main Container */}
       {!spreadsheetId ? (
