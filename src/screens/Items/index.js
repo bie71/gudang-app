@@ -246,7 +246,7 @@ export function ItemsScreen({ route, navigation }) {
             i.size as item_size
           FROM stock_history sh
           JOIN items i ON i.id = sh.item_id
-          WHERE DATE(sh.created_at) BETWEEN ? AND ?
+          WHERE (i.deleted_at IS NULL OR i.deleted_at = '') AND DATE(sh.created_at) BETWEEN ? AND ?
           ORDER BY sh.created_at ASC, sh.id ASC
         `,
         [startDate, endDate],
@@ -1134,8 +1134,8 @@ export function ItemDetailScreen({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              await exec(`DELETE FROM stock_history WHERE item_id = ?`, [item.id]);
-              await exec(`DELETE FROM items WHERE id = ?`, [item.id]);
+              const nowIso = new Date().toISOString();
+              await exec(`UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?`, [nowIso, nowIso, item.id]);
               refreshParent();
               navigation.goBack();
             } catch (error) {

@@ -127,23 +127,6 @@ export async function checkAndGenerateAlerts() {
       }
     }
 
-    // 3. Cek Keuangan - Pengingat Tutup Buku Harian (Daily Cash Reminder)
-    const todayStr = today.toLocaleDateString("sv-SE"); // Format YYYY-MM-DD
-    const dailyRes = await exec("SELECT COUNT(*) as count FROM bookkeeping_entries WHERE entry_date = ?", [todayStr]);
-    const dailyCount = dailyRes.rows.item(0).count || 0;
-
-    if (dailyCount === 0) {
-      const signature = `[KAS-DAILY-ALERT-${todayStr}]`;
-      const existsRes = await exec("SELECT COUNT(*) as count FROM notifications WHERE message LIKE ?", [`%${signature}%`]);
-      if (existsRes.rows.item(0).count === 0) {
-        await addNotification(
-          "Pengingat Tutup Buku",
-          `Anda belum mencatat transaksi keuangan hari ini (tanggal ${todayStr}). Segera catat pemasukan atau pengeluaran kas hari ini agar pembukuan keuangan toko Anda tetap rapi dan akurat! ${signature}`,
-          "keuangan"
-        );
-      }
-    }
-
     // 4. Cek Keuangan - Laporan Ringkasan Bulanan (Monthly Cash Summary)
     const prevMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
     const prevYear = prevMonthDate.getFullYear();

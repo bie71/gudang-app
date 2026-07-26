@@ -96,6 +96,41 @@ export async function ensureDbReady() {
         "is_read INTEGER NOT NULL DEFAULT 0," +
         "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
         ");";
+      const createMasterOrderersSql =
+        "CREATE TABLE IF NOT EXISTS master_orderers (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "name TEXT NOT NULL UNIQUE," +
+        "phone TEXT," +
+        "address TEXT," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "deleted_at TEXT" +
+        ");";
+      const createMasterPoItemsSql =
+        "CREATE TABLE IF NOT EXISTS master_po_items (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "name TEXT NOT NULL UNIQUE," +
+        "category TEXT," +
+        "default_price INTEGER NOT NULL DEFAULT 0," +
+        "default_cost_price INTEGER NOT NULL DEFAULT 0," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "deleted_at TEXT" +
+        ");";
+      const createMasterMarketersSql =
+        "CREATE TABLE IF NOT EXISTS master_marketers (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+        "name TEXT NOT NULL UNIQUE," +
+        "phone TEXT," +
+        "address TEXT," +
+        "default_fee INTEGER NOT NULL DEFAULT 0," +
+        "note TEXT," +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))," +
+        "deleted_at TEXT" +
+        ");";
 
       await db.execAsync(createItemsSql);
       await db.execAsync(createHistorySql);
@@ -105,9 +140,22 @@ export async function ensureDbReady() {
       await db.execAsync(createBookkeepingHistorySql);
       await db.execAsync(createCalculatorSql);
       await db.execAsync(createNotificationsSql);
+      await db.execAsync(createMasterOrderersSql);
+      await db.execAsync(createMasterPoItemsSql);
+      await db.execAsync(createMasterMarketersSql);
 
       try {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN orderer_name TEXT");
+      } catch (error) {
+        // ignore if column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN marketer_name TEXT");
+      } catch (error) {
+        // ignore if column already exists
+      }
+      try {
+        await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN marketer_fee INTEGER NOT NULL DEFAULT 0");
       } catch (error) {
         // ignore if column already exists
       }
@@ -160,6 +208,33 @@ export async function ensureDbReady() {
         await db.execAsync("ALTER TABLE purchase_orders ADD COLUMN completed_at TEXT");
       } catch (error) {
         // column already exists
+      }
+
+      // Migrasi untuk kolom updated_at dan deleted_at pada semua tabel pendukung sync
+      const syncTables = [
+        "items",
+        "purchase_orders",
+        "purchase_order_items",
+        "bookkeeping_entries",
+        "bookkeeping_entry_history",
+        "stock_history",
+        "calculator_entries",
+        "notifications",
+        "master_orderers",
+        "master_po_items",
+        "master_marketers",
+      ];
+      for (const table of syncTables) {
+        try {
+          await db.execAsync(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`);
+        } catch (e) {
+          // ignore if already exists
+        }
+        try {
+          await db.execAsync(`ALTER TABLE ${table} ADD COLUMN deleted_at TEXT`);
+        } catch (e) {
+          // ignore if already exists
+        }
       }
       try {
         await db.execAsync("UPDATE purchase_orders SET status = 'PROGRESS' WHERE status = 'PENDING'");

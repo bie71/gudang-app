@@ -8,6 +8,8 @@ Aplikasi gudang **offline-first** untuk input barang, stok masuk/keluar, riwayat
 - **Menu Pintas Floating Action Button (FAB):** Akses cepat ke aksi utama (Tambah Barang, Buat PO, Catat Kas, Laporan) dengan overlay backdrop gelap beranimasi elegan di Dashboard.
 - **Asisten Bisnis Pintar (AI Consultant):** Penghitungan otomatis persentase Margin Profit Bersih dari omzet penjualan riil (barang keluar + PO selesai) secara offline, lengkap dengan rekomendasi strategi dan tips bisnis taktis.
 - **Purchase Order (PO) & Analitik Terintegrasi:** Pemesanan barang ke supplier, detail pemesan, item barang belanjaan, estimasi tanggal Close PO & tanggal barang Ready, pelacakan status PO (Progress/Done/Cancelled), visual rasio status PO, spend leaders supplier, serta jadwal ready PO yang dapat diklik langsung ke detail PO.
+- **Manajemen Marketer & Fee PO (v1.7.0):** Pencatatan nama marketer dan fee marketer pada Purchase Order (PO), pemeringkatan Marketer Terbanyak (Rank Marketer), pembatasan tampilan item (maksimal 3 item + `, ...`), tombol *'Lihat Semua Marketer'*, serta Modal Detail Marketer interaktif yang menampilkan rincian PO dan fee per PO.
+- **Sistem Notifikasi Kas Disesuaikan (v1.7.0):** Pembersihan pengingat notifikasi kas harian untuk berfokus pada laporan rekapitulasi bulanan.
 - **Pembukuan (Keuangan/Kas):** Pencatatan pemasukan dan pengeluaran kas toko secara terperinci (general ledger) beserta log perubahan data.
 - **Kalkulator Biaya:** Penghitungan harga pokok penjualan (HPP) mencakup ongkir, pajak, dan biaya lainnya secara dinamis.
 - **Integrasi Google Sheets Async (Two-Way Sync):**

@@ -11,6 +11,7 @@ import {
 import { AddBookkeepingScreen, BookkeepingDetailScreen, BookkeepingHistoryScreen } from "../screens/bookkeeping";
 import HistoryScreen from "../screens/HistoryScreen";
 import DataManagementScreen from "../screens/DataManagementScreen";
+import MasterDataScreen from "../screens/MasterDataScreen";
 import GoogleSheetsScreen from "../screens/GoogleSheetsScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
 import AnalyticsScreen from "../screens/AnalyticsScreen";
@@ -47,6 +48,11 @@ export default function RootNavigator() {
         name="DataManagement"
         component={DataManagementScreen}
         options={{ title: "Manajemen Data" }}
+      />
+      <Stack.Screen
+        name="MasterData"
+        component={MasterDataScreen}
+        options={{ title: "Master Pemesan & Barang PO", headerShown: false }}
       />
       <Stack.Screen
         name="GoogleSheets"

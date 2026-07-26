@@ -256,6 +256,9 @@ export async function createAutoSpreadsheet() {
                 values: [
                   { userEnteredValue: { stringValue: "ID" } },
                   { userEnteredValue: { stringValue: "Nama Supplier" } },
+                  { userEnteredValue: { stringValue: "Nama Pemesan" } },
+                  { userEnteredValue: { stringValue: "Nama Marketer" } },
+                  { userEnteredValue: { stringValue: "Fee Marketer" } },
                   { userEnteredValue: { stringValue: "Nama Barang" } },
                   { userEnteredValue: { stringValue: "Jumlah" } },
                   { userEnteredValue: { stringValue: "Harga" } },
@@ -387,6 +390,9 @@ export async function syncLocalToGoogleSheets(moduleName, action, data) {
       rowValues = [
         String(data.id),
         String(data.supplier_name || ""),
+        String(data.orderer_name || ""),
+        String(data.marketer_name || ""),
+        Number(data.marketer_fee || 0),
         String(data.item_name || ""),
         Number(data.quantity || 0),
         Number(data.price || 0),
@@ -571,7 +577,7 @@ export async function syncModuleData(moduleName) {
       if (moduleName === "barang") {
         defaultHeaders = ["ID", "Nama Barang", "Kategori", "Harga Jual", "Harga Modal", "Stok", "Ukuran"];
       } else if (moduleName === "po") {
-        defaultHeaders = ["ID", "Nama Supplier", "Nama Barang", "Jumlah", "Harga", "Tanggal", "Status", "Catatan", "Tanggal Close PO", "Estimasi Ready"];
+        defaultHeaders = ["ID", "Nama Supplier", "Nama Pemesan", "Nama Marketer", "Fee Marketer", "Nama Barang", "Jumlah", "Harga", "Tanggal", "Status", "Catatan", "Tanggal Close PO", "Estimasi Ready"];
       } else if (moduleName === "keuangan") {
         defaultHeaders = ["ID", "Nama Transaksi", "Jumlah", "Tanggal", "Catatan"];
       } else if (moduleName === "kalkulator") {
@@ -598,7 +604,7 @@ export async function syncModuleData(moduleName) {
       const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock, size FROM items");
       localRows = res.rows._array;
     } else if (moduleName === "po") {
-      const res = await sqlite.exec("SELECT id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
+      const res = await sqlite.exec("SELECT id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
       localRows = res.rows._array;
     } else if (moduleName === "keuangan") {
       const res = await sqlite.exec("SELECT id, name, amount, entry_date, note FROM bookkeeping_entries");
@@ -644,11 +650,19 @@ export async function syncModuleData(moduleName) {
             );
           }
         } else if (moduleName === "po") {
-          const [id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date] = sRow;
+          let id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date;
+          if (sRow.length >= 13) {
+            [id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date] = sRow;
+          } else {
+            [id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date] = sRow;
+            orderer_name = "";
+            marketer_name = "";
+            marketer_fee = 0;
+          }
           if (id && item_name) {
             await sqlite.exec(
-              "INSERT OR REPLACE INTO purchase_orders (id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-              [Number(id), supplier_name || "", item_name, Number(quantity || 0), Number(price || 0), order_date || "", status || "PROGRESS", note || "", close_po_date || null, estimated_ready_date || null]
+              "INSERT OR REPLACE INTO purchase_orders (id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [Number(id), supplier_name || "", orderer_name || "", marketer_name || "", Number(marketer_fee || 0), item_name, Number(quantity || 0), Number(price || 0), order_date || "", status || "PROGRESS", note || "", close_po_date || null, estimated_ready_date || null]
             );
           }
         } else if (moduleName === "keuangan") {
@@ -677,7 +691,7 @@ export async function syncModuleData(moduleName) {
       const res = await sqlite.exec("SELECT id, name, category, price, cost_price, stock, size FROM items");
       updatedLocalRows = res.rows._array;
     } else if (moduleName === "po") {
-      const res = await sqlite.exec("SELECT id, supplier_name, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
+      const res = await sqlite.exec("SELECT id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, close_po_date, estimated_ready_date FROM purchase_orders");
       updatedLocalRows = res.rows._array;
     } else if (moduleName === "keuangan") {
       const res = await sqlite.exec("SELECT id, name, amount, entry_date, note FROM bookkeeping_entries");
@@ -691,7 +705,7 @@ export async function syncModuleData(moduleName) {
       if (moduleName === "barang") {
         return [String(row.id), String(row.name || ""), String(row.category || ""), Number(row.price || 0), Number(row.cost_price || 0), Number(row.stock || 0), String(row.size || "")];
       } else if (moduleName === "po") {
-        return [String(row.id), String(row.supplier_name || ""), String(row.item_name || ""), Number(row.quantity || 0), Number(row.price || 0), String(row.order_date || ""), String(row.status || ""), String(row.note || ""), String(row.close_po_date || ""), String(row.estimated_ready_date || "")];
+        return [String(row.id), String(row.supplier_name || ""), String(row.orderer_name || ""), String(row.marketer_name || ""), Number(row.marketer_fee || 0), String(row.item_name || ""), Number(row.quantity || 0), Number(row.price || 0), String(row.order_date || ""), String(row.status || ""), String(row.note || ""), String(row.close_po_date || ""), String(row.estimated_ready_date || "")];
       } else if (moduleName === "keuangan") {
         return [String(row.id), String(row.name || ""), Number(row.amount || 0), String(row.entry_date || ""), String(row.note || "")];
       } else if (moduleName === "kalkulator") {

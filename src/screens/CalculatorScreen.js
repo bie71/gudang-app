@@ -88,10 +88,10 @@ export function CalculatorScreen() {
     else setLoading(true);
 
     try {
-      let query = "SELECT * FROM calculator_entries";
+      let query = "SELECT * FROM calculator_entries WHERE (deleted_at IS NULL OR deleted_at = '')";
       let params = [];
       if (normalizedSearch) {
-        query += " WHERE LOWER(item_name) LIKE ? OR LOWER(IFNULL(note, '')) LIKE ? OR LOWER(IFNULL(items_json, '')) LIKE ?";
+        query += " AND (LOWER(item_name) LIKE ? OR LOWER(IFNULL(note, '')) LIKE ? OR LOWER(IFNULL(items_json, '')) LIKE ?)";
         const p = `%${normalizedSearch}%`;
         params = [p, p, p];
       }
@@ -118,26 +118,16 @@ export function CalculatorScreen() {
     }
   }, [searchTerm]);
 
+  const handleRefresh = () => loadEntries({ reset: true, mode: "refresh" });
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      loadEntries({ reset: false, mode: "loadMore" });
+    }
+  };
+
   useEffect(() => {
     loadEntries({ reset: true });
-  }, [loadEntries]);
-
-  // Search debounce
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      loadEntries({ search: searchTerm, reset: true });
-    }, 250);
-    return () => clearTimeout(handler);
-  }, [searchTerm, loadEntries]);
-
-  const handleRefresh = () => {
-    loadEntries({ reset: true, mode: "refresh" });
-  };
-
-  const handleLoadMore = () => {
-    if (loading || loadingMore || !hasMore) return;
-    loadEntries({ mode: "loadMore" });
-  };
+  }, [loadEntries, searchTerm]);
 
   // Multiple Items Helpers
   const addFormItem = () => {
@@ -183,8 +173,8 @@ export function CalculatorScreen() {
     }, 0);
   };
 
-  // Open Form for Add
-  const openAddForm = () => {
+  // Reset & Open Create Modal
+  const openCreateModal = () => {
     setEditingEntry(null);
     setFormItems([{ id: Date.now(), name: "", price: "", qty: "1" }]);
     setShippingFee("");
@@ -194,8 +184,8 @@ export function CalculatorScreen() {
     setFormVisible(true);
   };
 
-  // Open Form for Edit
-  const openEditForm = (entry) => {
+  // Open Edit Modal
+  const openEditModal = (entry) => {
     setEditingEntry(entry);
     setShippingFee(formatNumberInput(String(entry.shipping_fee)));
     setTaxFee(formatNumberInput(String(entry.tax_fee)));
@@ -294,7 +284,8 @@ export function CalculatorScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await exec("DELETE FROM calculator_entries WHERE id = ?", [entry.id]);
+            const nowIso = new Date().toISOString();
+            await exec("UPDATE calculator_entries SET deleted_at = ?, updated_at = ? WHERE id = ?", [nowIso, nowIso, entry.id]);
             loadEntries({ reset: true });
           } catch (error) {
             console.log("DELETE CALCULATOR ENTRY ERROR:", error);

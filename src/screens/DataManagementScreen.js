@@ -18,6 +18,7 @@ import {
   saveDriveToken,
   uploadBackupToDrive,
 } from "../services/googleDrive";
+import { performGoogleDriveSync } from "../services/googleDriveSync";
 import * as WebBrowser from "expo-web-browser";
 WebBrowser.maybeCompleteAuthSession();
 
@@ -26,6 +27,7 @@ export default function DataManagementScreen({ navigation }) {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [driveSyncing, setDriveSyncing] = useState(false);
+  const [fullSyncing, setFullSyncing] = useState(false);
   const [driveToken, setDriveToken] = useState(null);
   const [initialTokenLoading, setInitialTokenLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
@@ -347,6 +349,26 @@ export default function DataManagementScreen({ navigation }) {
     [navigation],
   );
 
+  const handlePerformSync = useCallback(async () => {
+    if (fullSyncing) return;
+    if (!googleLoggedIn) {
+      Alert.alert("Login Diperlukan", "Silakan login Google Drive terlebih dahulu sebelum melakukan sinkronisasi.");
+      return;
+    }
+    setFullSyncing(true);
+    try {
+      const res = await performGoogleDriveSync();
+      if (res.success) {
+        Alert.alert("Sync Berhasil", `Data berhasil disinkronkan 2-arah pada ${new Date(res.syncedAt).toLocaleString("id-ID")}.`);
+      }
+    } catch (error) {
+      console.log("2-WAY SYNC ERROR:", error);
+      Alert.alert("Gagal Sync", error?.message || "Tidak dapat melakukan sinkronisasi saat ini.");
+    } finally {
+      setFullSyncing(false);
+    }
+  }, [fullSyncing, googleLoggedIn]);
+
   const handleRestore = useCallback(async () => {
     if (restoring) return;
     try {
@@ -453,8 +475,26 @@ export default function DataManagementScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, marginTop: 15  }}>
         <Text style={{ fontSize: 24, fontWeight: "700", color: "#0F172A", marginBottom: 6 }}>Manajemen Data</Text>
         <Text style={{ color: "#64748B", marginBottom: 20 }}>
-          Ekspor CSV per modul, lakukan backup penuh, atau sinkronkan backup ke Google Drive.
+          Ekspor CSV per modul, lakukan backup penuh, atau sinkronkan data 2-arah ke Google Drive.
         </Text>
+
+        <Button
+          icon="people-circle-outline"
+          label="Kelola Master Pemesan & Barang PO"
+          subtitle="Kelola master data nama pemesan dan barang PO untuk saran otomatis."
+          color="#4F46E5"
+          onPress={() => navigation.navigate("MasterData")}
+        />
+
+        <Button
+          icon="sync-outline"
+          label="Sync Otomatis Google Drive"
+          subtitle="Sinkronkan data secara 2-arah antara HP ini dan HP lain (memerlukan akun Google yang sama)."
+          color="#8B5CF6"
+          onPress={handlePerformSync}
+          loading={fullSyncing}
+          disabled={!googleLoggedIn || fullSyncing}
+        />
 
         <Button
           icon="document-outline"
@@ -463,7 +503,7 @@ export default function DataManagementScreen({ navigation }) {
           color="#2563EB"
           onPress={handleExportAllCsv}
           loading={csvExporting}
-          disabled={backingUp || restoring || driveSyncing}
+          disabled={backingUp || restoring || driveSyncing || fullSyncing}
         />
 
         <Button
@@ -473,7 +513,7 @@ export default function DataManagementScreen({ navigation }) {
           color="#0EA5E9"
           onPress={handleBackup}
           loading={backingUp}
-          disabled={csvExporting || restoring || driveSyncing}
+          disabled={csvExporting || restoring || driveSyncing || fullSyncing}
         />
 
         <Button
@@ -483,7 +523,7 @@ export default function DataManagementScreen({ navigation }) {
           color="#F97316"
           onPress={handleRestore}
           loading={restoring}
-          disabled={csvExporting || backingUp || driveSyncing}
+          disabled={csvExporting || backingUp || driveSyncing || fullSyncing}
         />
 
         <View style={{ marginVertical: 8 }} />
@@ -491,21 +531,21 @@ export default function DataManagementScreen({ navigation }) {
         <Button
           icon={googleLoggedIn ? "log-out-outline" : "logo-google"}
           label={googleLoggedIn ? "Keluar Google Drive" : "Login Google Drive"}
-          subtitle={googleLoggedIn ? "Google Drive tersambung. Kamu dapat mengunggah backup langsung." : "Masuk dengan akun Google untuk menyimpan backup ke Google Drive."}
+          subtitle={googleLoggedIn ? "Google Drive tersambung. Kamu dapat melakukan sync otomatis." : "Masuk dengan akun Google untuk menyinkronkan data antar HP."}
           color="#EA4335"
           onPress={googleLoggedIn ? handleDriveLogout : handleDriveLogin}
           loading={authLoading || initialTokenLoading}
-          disabled={!hasGoogleConfig || driveSyncing}
+          disabled={!hasGoogleConfig || driveSyncing || fullSyncing}
         />
 
         <Button
           icon="cloud-outline"
-          label="Backup ke Google Drive"
-          subtitle="Unggah file backup JSON ke Google Drive (memerlukan login)."
+          label="Backup Manual ke Google Drive"
+          subtitle="Unggah file backup JSON manual ke Google Drive."
           color="#34A853"
           onPress={handleDriveBackup}
           loading={driveSyncing}
-          disabled={driveBackupDisabled}
+          disabled={driveBackupDisabled || fullSyncing}
         />
 
         <Button

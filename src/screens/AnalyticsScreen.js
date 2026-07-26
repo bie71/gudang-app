@@ -8,21 +8,43 @@ import {
   Dimensions,
   RefreshControl,
   Platform,
+  Modal,
+  Pressable,
+  StyleSheet,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Rect, Circle, Text as SvgText, G } from "react-native-svg";
 import { exec } from "../services/database";
 import { formatCurrencyValue, formatDateDisplay } from "../utils/format";
+import { getPOStatusStyle } from "../constants";
 
 const WINDOW_WIDTH = Dimensions.get("window").width;
 
-export default function AnalyticsScreen({ navigation }) {
+const formatItemNamesLimit = (itemNamesRaw, limit = 3) => {
+  if (!itemNamesRaw) return "Tanpa barang";
+  const items = Array.from(new Set(String(itemNamesRaw).split(",").map(s => s.trim()).filter(Boolean)));
+  if (items.length === 0) return "Tanpa barang";
+  if (items.length > limit) {
+    return items.slice(0, limit).join(", ") + ", ...";
+  }
+  return items.join(", ");
+};
+
+export default function AnalyticsScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("cashflow"); // "cashflow" | "inventory" | "po" | "profit"
+  const initialTab = route?.params?.activeTab || route?.params?.initialTab || "cashflow";
+  const [activeTab, setActiveTab] = useState(initialTab); // "cashflow" | "inventory" | "po" | "profit"
   const [timeRange, setTimeRange] = useState("7"); // "7" | "30" days
+
+  useEffect(() => {
+    const targetTab = route?.params?.activeTab || route?.params?.initialTab;
+    if (targetTab) {
+      setActiveTab(targetTab);
+    }
+  }, [route?.params?.activeTab, route?.params?.initialTab]);
 
   // Analytics Data States
   const [cashFlow, setCashFlow] = useState([]);
@@ -38,7 +60,175 @@ export default function AnalyticsScreen({ navigation }) {
     totalValue: 0,
   });
   const [topSuppliers, setTopSuppliers] = useState([]);
+  const [topOrderers, setTopOrderers] = useState([]);
+  const [topMarketers, setTopMarketers] = useState([]);
   const [upcomingDeliveries, setUpcomingDeliveries] = useState([]);
+  const [ordererDetailModal, setOrdererDetailModal] = useState({
+    visible: false,
+    ordererName: "",
+    marketerName: "",
+    supplierName: "",
+    orders: [],
+    totalSpent: 0,
+    totalOrders: 0,
+  });
+  const [ordererDetailLoading, setOrdererDetailLoading] = useState(false);
+  const [marketerDetailModal, setMarketerDetailModal] = useState({
+    visible: false,
+    marketerName: "",
+    orders: [],
+    totalFee: 0,
+    totalSales: 0,
+    totalOrders: 0,
+  });
+  const [marketerDetailLoading, setMarketerDetailLoading] = useState(false);
+
+  const openOrdererDetailModal = async (ordererName, fallbackMarketer = "", fallbackSupplier = "") => {
+    if (!ordererName) return;
+    try {
+      setOrdererDetailLoading(true);
+      setOrdererDetailModal({
+        visible: true,
+        ordererName,
+        marketerName: fallbackMarketer,
+        supplierName: fallbackSupplier,
+        orders: [],
+        totalSpent: 0,
+        totalOrders: 0,
+      });
+      const res = await exec(
+        `
+        SELECT 
+          po.id,
+          po.order_date,
+          po.status,
+          po.supplier_name,
+          po.marketer_name,
+          po.marketer_fee,
+          po.item_name,
+          IFNULL(SUM(items.quantity), 0) as total_qty,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_value
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE po.orderer_name = ? AND (po.deleted_at IS NULL OR po.deleted_at = '')
+        GROUP BY po.id
+        ORDER BY po.order_date DESC, po.id DESC
+      `,
+        [ordererName],
+      );
+
+      const ordersList = [];
+      let totalSpentSum = 0;
+      let mainMarketer = fallbackMarketer;
+      let mainSupplier = fallbackSupplier;
+
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        const val = Number(row.total_value ?? 0);
+        totalSpentSum += val;
+        if (row.marketer_name && !mainMarketer) mainMarketer = row.marketer_name;
+        if (row.supplier_name && !mainSupplier) mainSupplier = row.supplier_name;
+        ordersList.push({
+          id: row.id,
+          orderDate: row.order_date,
+          status: row.status,
+          supplierName: row.supplier_name,
+          marketerName: row.marketer_name,
+          marketerFee: Number(row.marketer_fee ?? 0),
+          itemName: row.item_name,
+          totalQty: Number(row.total_qty ?? 0),
+          totalValue: val,
+        });
+      }
+
+      setOrdererDetailModal(prev => ({
+        ...prev,
+        marketerName: mainMarketer,
+        supplierName: mainSupplier,
+        orders: ordersList,
+        totalSpent: totalSpentSum,
+        totalOrders: ordersList.length,
+      }));
+    } catch (err) {
+      console.log("ORDERER DETAIL ERROR:", err);
+    } finally {
+      setOrdererDetailLoading(false);
+    }
+  };
+
+  const openMarketerDetailModal = async (marketerName) => {
+    if (!marketerName) return;
+    try {
+      setMarketerDetailLoading(true);
+      setMarketerDetailModal({
+        visible: true,
+        marketerName,
+        orders: [],
+        totalFee: 0,
+        totalSales: 0,
+        totalOrders: 0,
+      });
+
+      const res = await exec(
+        `
+        SELECT 
+          po.id,
+          po.order_date,
+          po.status,
+          po.supplier_name,
+          po.orderer_name,
+          po.marketer_name,
+          IFNULL(po.marketer_fee, 0) as marketer_fee,
+          po.item_name,
+          IFNULL(SUM(items.quantity), 0) as total_qty,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_value
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE (po.deleted_at IS NULL OR po.deleted_at = '') AND po.marketer_name = ?
+        GROUP BY po.id
+        ORDER BY po.order_date DESC, po.id DESC
+      `,
+        [marketerName]
+      );
+
+      const ordersList = [];
+      let totalFeeSum = 0;
+      let totalSalesSum = 0;
+
+      for (let i = 0; i < res.rows.length; i++) {
+        const row = res.rows.item(i);
+        const val = Number(row.total_value ?? 0);
+        const fee = Number(row.marketer_fee ?? 0);
+        totalSalesSum += val;
+        totalFeeSum += fee;
+        ordersList.push({
+          id: row.id,
+          orderDate: row.order_date,
+          status: row.status,
+          supplierName: row.supplier_name,
+          ordererName: row.orderer_name,
+          marketerName: row.marketer_name,
+          marketerFee: fee,
+          itemName: row.item_name,
+          totalQty: Number(row.total_qty ?? 0),
+          totalValue: val,
+        });
+      }
+
+      setMarketerDetailModal(prev => ({
+        ...prev,
+        orders: ordersList,
+        totalFee: totalFeeSum,
+        totalSales: totalSalesSum,
+        totalOrders: ordersList.length,
+      }));
+    } catch (err) {
+      console.log("MARKETER DETAIL ERROR:", err);
+    } finally {
+      setMarketerDetailLoading(false);
+    }
+  };
+
   const [summaryStats, setSummaryStats] = useState({
     totalIncome: 0,
     totalExpense: 0,
@@ -163,7 +353,7 @@ export default function AnalyticsScreen({ navigation }) {
         SELECT IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit
         FROM purchase_orders po
         JOIN purchase_order_items items ON items.order_id = po.id
-        WHERE po.status = 'DONE'
+        WHERE po.status = 'DONE' AND (po.deleted_at IS NULL OR po.deleted_at = '')
       `);
       const poProfitVal = Number(poProfitSummary.rows.item(0)?.total_profit ?? 0);
 
@@ -171,7 +361,7 @@ export default function AnalyticsScreen({ navigation }) {
         SELECT IFNULL(SUM(items.quantity * (items.price - IFNULL(items.cost_price, 0))), 0) as total_profit
         FROM purchase_orders po
         JOIN purchase_order_items items ON items.order_id = po.id
-        WHERE po.status = 'PROGRESS'
+        WHERE po.status = 'PROGRESS' AND (po.deleted_at IS NULL OR po.deleted_at = '')
       `);
       const poProgressProfitVal = Number(poProgressProfitSummary.rows.item(0)?.total_profit ?? 0);
 
@@ -187,7 +377,7 @@ export default function AnalyticsScreen({ navigation }) {
         SELECT IFNULL(SUM(items.quantity * IFNULL(items.price, 0)), 0) as total_sales
         FROM purchase_orders po
         JOIN purchase_order_items items ON items.order_id = po.id
-        WHERE po.status = 'DONE'
+        WHERE po.status = 'DONE' AND (po.deleted_at IS NULL OR po.deleted_at = '')
       `);
       const poSalesVal = Number(poSalesSummary.rows.item(0)?.total_sales ?? 0);
 
@@ -242,6 +432,7 @@ export default function AnalyticsScreen({ navigation }) {
             IFNULL(SUM(items.quantity * items.price), 0) as total_value
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
           GROUP BY po.id
         ) aggregated
       `);
@@ -265,6 +456,7 @@ export default function AnalyticsScreen({ navigation }) {
           IFNULL(SUM(items.quantity * items.price), 0) as total_spent
         FROM purchase_orders po
         LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
         GROUP BY supplier
         ORDER BY total_spent DESC
         LIMIT 5
@@ -281,6 +473,76 @@ export default function AnalyticsScreen({ navigation }) {
       }
       setTopSuppliers(tsArray);
 
+      // 8. Fetch Top Orderers (Statistik Pemesan Terbanyak)
+      const topOrderersRes = await exec(`
+        SELECT 
+          IFNULL(NULLIF(po.orderer_name, ''), 'Tanpa Nama') as orderer_name,
+          (
+            SELECT po2.marketer_name 
+            FROM purchase_orders po2 
+            WHERE po2.orderer_name = po.orderer_name AND po2.marketer_name IS NOT NULL AND po2.marketer_name != '' AND (po2.deleted_at IS NULL OR po2.deleted_at = '')
+            LIMIT 1
+          ) as marketer_name,
+          (
+            SELECT po3.supplier_name 
+            FROM purchase_orders po3 
+            WHERE po3.orderer_name = po.orderer_name AND po3.supplier_name IS NOT NULL AND po3.supplier_name != '' AND (po3.deleted_at IS NULL OR po3.deleted_at = '')
+            LIMIT 1
+          ) as supplier_name,
+          COUNT(DISTINCT po.id) as total_orders,
+          IFNULL(SUM(items.quantity), 0) as total_qty,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_spent
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
+        GROUP BY orderer_name
+        ORDER BY total_spent DESC, total_orders DESC
+        LIMIT 10
+      `);
+
+      const toArray = [];
+      for (let i = 0; i < topOrderersRes.rows.length; i++) {
+        const row = topOrderersRes.rows.item(i);
+        toArray.push({
+          ordererName: row.orderer_name,
+          marketerName: row.marketer_name || "",
+          supplierName: row.supplier_name || "",
+          ordersCount: Number(row.total_orders ?? 0),
+          totalQty: Number(row.total_qty ?? 0),
+          totalSpent: Number(row.total_spent ?? 0),
+        });
+      }
+      setTopOrderers(toArray);
+
+      // 9. Fetch Top Marketers (Statistik Rank Marketer Terbanyak)
+      const topMarketersRes = await exec(`
+        SELECT 
+          IFNULL(NULLIF(po.marketer_name, ''), 'Tanpa Marketer') as marketer_name,
+          COUNT(DISTINCT po.id) as total_orders,
+          IFNULL(SUM(po.marketer_fee), 0) as total_fee,
+          IFNULL(SUM(items.quantity * items.price), 0) as total_sales,
+          GROUP_CONCAT(DISTINCT NULLIF(items.name, '')) as item_names
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items items ON items.order_id = po.id
+        WHERE (po.deleted_at IS NULL OR po.deleted_at = '') AND po.marketer_name IS NOT NULL AND po.marketer_name != ''
+        GROUP BY marketer_name
+        ORDER BY total_fee DESC, total_sales DESC
+        LIMIT 10
+      `);
+
+      const tmArray = [];
+      for (let i = 0; i < topMarketersRes.rows.length; i++) {
+        const row = topMarketersRes.rows.item(i);
+        tmArray.push({
+          marketerName: row.marketer_name,
+          ordersCount: Number(row.total_orders ?? 0),
+          totalFee: Number(row.total_fee ?? 0),
+          totalSales: Number(row.total_sales ?? 0),
+          itemNames: formatItemNamesLimit(row.item_names, 3),
+        });
+      }
+      setTopMarketers(tmArray);
+
       // 8. Fetch Upcoming Deliveries (estimated ready dates for PROGRESS POs)
       const upcomingRes = await exec(`
         SELECT 
@@ -294,7 +556,7 @@ export default function AnalyticsScreen({ navigation }) {
           (SELECT SUM(quantity) FROM purchase_order_items WHERE order_id = po.id) as total_qty,
           (SELECT SUM(quantity * price) FROM purchase_order_items WHERE order_id = po.id) as total_val
         FROM purchase_orders po
-        WHERE po.status = 'PROGRESS' AND po.estimated_ready_date IS NOT NULL AND po.estimated_ready_date != ''
+        WHERE (po.deleted_at IS NULL OR po.deleted_at = '') AND po.status = 'PROGRESS' AND po.estimated_ready_date IS NOT NULL AND po.estimated_ready_date != ''
         ORDER BY date(po.estimated_ready_date) ASC, po.id DESC
         LIMIT 5
       `);
@@ -956,6 +1218,116 @@ export default function AnalyticsScreen({ navigation }) {
                 )}
               </View>
 
+              {/* Top Pemesan (Orderer Statistics Card) */}
+              <View style={{ backgroundColor: "#fff", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#F1F5F9", marginTop: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="people" size={20} color="#4F46E5" />
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A" }}>
+                      Statistik Pemesan Terbanyak
+                    </Text>
+                  </View>
+                </View>
+
+                {topOrderers.length === 0 ? (
+                  <Text style={{ color: "#94A3B8", fontSize: 12 }}>Belum ada data pemesan PO</Text>
+                ) : (
+                  topOrderers.map((item, index) => {
+                    const maxSpent = Math.max(...topOrderers.map(t => t.totalSpent), 1);
+                    const progressWidth = `${(item.totalSpent / maxSpent) * 100}%`;
+                    return (
+                      <TouchableOpacity
+                        key={`${item.ordererName}-${index}`}
+                        activeOpacity={0.7}
+                        onPress={() => openOrdererDetailModal(item.ordererName, item.marketerName, item.supplierName)}
+                        style={{ marginVertical: 8 }}
+                      >
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#4F46E5", backgroundColor: "#EEF2FF", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                #{index + 1}
+                              </Text>
+                              <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }} numberOfLines={1}>
+                                {item.ordererName}
+                                 {Boolean(item.marketerName) && (
+                                  <Text style={{ color: "#D97706", fontWeight: "600" }}> - Marketer: {item.marketerName}</Text>
+                                )}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>
+                              {item.supplierName ? `🏢 Pemasok: ${item.supplierName} • ` : ""}{item.ordersCount} kali order • {item.totalQty} pcs
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: "800", color: "#10B981" }}>
+                            {formatCurrencyValue(item.totalSpent)}
+                          </Text>
+                        </View>
+
+                        <View style={{ height: 4, backgroundColor: "#F1F5F9", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                          <View style={{ width: progressWidth, height: "100%", backgroundColor: "#4F46E5", borderRadius: 2 }} />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+
+              {/* Top Marketer (Marketer Statistics Card) */}
+              <View style={{ backgroundColor: "#fff", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#F1F5F9", marginTop: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="briefcase" size={20} color="#D97706" />
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#0F172A" }}>
+                      Statistik Rank Marketer Terbanyak
+                    </Text>
+                  </View>
+                </View>
+
+                {topMarketers.length === 0 ? (
+                  <Text style={{ color: "#94A3B8", fontSize: 12 }}>Belum ada data marketer</Text>
+                ) : (
+                  topMarketers.map((item, index) => {
+                    const maxFee = Math.max(...topMarketers.map(t => t.totalFee), 1);
+                    const progressWidth = `${(item.totalFee / maxFee) * 100}%`;
+                    return (
+                      <TouchableOpacity
+                        key={`${item.marketerName}-${index}`}
+                        activeOpacity={0.7}
+                        onPress={() => openMarketerDetailModal(item.marketerName)}
+                        style={{ marginVertical: 8 }}
+                      >
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#D97706", backgroundColor: "#FEF3C7", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                #{index + 1}
+                              </Text>
+                              <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }} numberOfLines={1}>
+                                {item.marketerName}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 10, color: "#64748B", marginTop: 2 }} numberOfLines={1}>
+                              {item.ordersCount} kali PO • {item.itemNames || "Tanpa barang"}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: "flex-end" }}>
+                            <Text style={{ fontSize: 13, fontWeight: "800", color: "#D97706" }}>
+                              {formatCurrencyValue(item.totalFee)}
+                            </Text>
+                            <Text style={{ fontSize: 9, color: "#94A3B8" }}>Total Fee</Text>
+                          </View>
+                        </View>
+
+                        <View style={{ height: 4, backgroundColor: "#FEF3C7", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                          <View style={{ width: progressWidth, height: "100%", backgroundColor: "#D97706", borderRadius: 2 }} />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+
               {/* Upcoming Deliveries (Jadwal Ready) */}
               <View style={{ backgroundColor: "#fff", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#F1F5F9", marginTop: 16 }}>
                 <View style={{ flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 12 }}>
@@ -1132,6 +1504,138 @@ export default function AnalyticsScreen({ navigation }) {
           )}
         </ScrollView>
       )}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={ordererDetailModal.visible}
+        onRequestClose={() => setOrdererDetailModal(prev => ({ ...prev, visible: false }))}
+        statusBarTranslucent
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(15, 23, 42, 0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOrdererDetailModal(prev => ({ ...prev, visible: false }))} />
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              maxHeight: "85%",
+              backgroundColor: "#fff",
+              borderRadius: 24,
+              padding: 20,
+              elevation: 10,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.2,
+              shadowRadius: 16,
+            }}
+          >
+            {/* Modal Header */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="person-circle" size={26} color="#4F46E5" />
+                <Text style={{ fontSize: 18, fontWeight: "700", color: "#0F172A" }}>Detail Pemesan PO</Text>
+              </View>
+              <TouchableOpacity onPress={() => setOrdererDetailModal(prev => ({ ...prev, visible: false }))}>
+                <Ionicons name="close-circle" size={26} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Orderer Profile Info Banner */}
+            <View style={{ backgroundColor: "#F8FAFC", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#0F172A" }}>
+                👤 {ordererDetailModal.ordererName}
+              </Text>
+              {Boolean(ordererDetailModal.marketerName) && (
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#D97706", backgroundColor: "#FEF3C7", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#FDE68A" }}>
+                    Marketer: {ordererDetailModal.marketerName}
+                  </Text>
+                </View>
+              )}
+              {Boolean(ordererDetailModal.supplierName) && (
+                <Text style={{ fontSize: 13, fontWeight: "500", color: "#64748B", marginTop: 4 }}>
+                  🏢 Pemasok: {ordererDetailModal.supplierName}
+                </Text>
+              )}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: "#E2E8F0" }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: "#64748B" }}>
+                  Total {ordererDetailModal.totalOrders} PO Dibuat
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: "800", color: "#10B981" }}>
+                  {formatCurrencyValue(ordererDetailModal.totalSpent)}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={{ fontSize: 14, fontWeight: "700", color: "#0F172A", marginBottom: 10 }}>Daftar Purchase Order</Text>
+
+            {ordererDetailLoading ? (
+              <ActivityIndicator color="#4F46E5" style={{ marginVertical: 20 }} />
+            ) : ordererDetailModal.orders.length === 0 ? (
+              <Text style={{ color: "#94A3B8", fontStyle: "italic", textAlign: "center", marginVertical: 20 }}>Tidak ada riwayat PO.</Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {ordererDetailModal.orders.map((poItem, pIdx) => {
+                  const statusStyle = getPOStatusStyle(poItem.status);
+                  return (
+                    <TouchableOpacity
+                      key={poItem.id ?? pIdx}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setOrdererDetailModal(prev => ({ ...prev, visible: false }));
+                        setTimeout(() => {
+                          navigation.navigate("PurchaseOrderDetail", { orderId: poItem.id });
+                        }, 150);
+                      }}
+                      style={{
+                        backgroundColor: "#fff",
+                        borderWidth: 1,
+                        borderColor: "#E2E8F0",
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#0F172A" }}>
+                          PO #{poItem.id}
+                        </Text>
+                        <View style={{ backgroundColor: statusStyle.background, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: statusStyle.color }}>{statusStyle.label}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: "#334155", marginTop: 4 }}>
+                        {poItem.itemName}
+                      </Text>
+                      {Boolean(poItem.marketerName) && (
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#D97706", marginTop: 2 }}>
+                          Marketer: {poItem.marketerName}
+                        </Text>
+                      )}
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                        <Text style={{ fontSize: 11, color: "#64748B" }}>
+                          {formatDateDisplay(poItem.orderDate)} • {poItem.totalQty} pcs
+                        </Text>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#059669" }}>
+                          {formatCurrencyValue(poItem.totalValue)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Footer Close */}
+            <TouchableOpacity
+              onPress={() => setOrdererDetailModal(prev => ({ ...prev, visible: false }))}
+              style={{ marginTop: 14, backgroundColor: "#F1F5F9", paddingVertical: 12, borderRadius: 14, alignItems: "center" }}
+            >
+              <Text style={{ color: "#475569", fontWeight: "700" }}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

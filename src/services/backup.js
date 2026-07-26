@@ -7,7 +7,7 @@ import { buildTimestampedFileBase } from "../utils/csv";
 const BACKUP_VERSION = 1;
 
 const TABLE_SCHEMAS = {
-  items: ["id", "name", "category", "price", "cost_price", "stock"],
+  items: ["id", "name", "category", "price", "cost_price", "stock", "updated_at", "deleted_at"],
   purchase_orders: [
     "id",
     "supplier_name",
@@ -19,10 +19,14 @@ const TABLE_SCHEMAS = {
     "note",
     "created_at",
     "orderer_name",
+    "marketer_name",
+    "marketer_fee",
     "completed_at",
+    "updated_at",
+    "deleted_at",
   ],
-  purchase_order_items: ["id", "order_id", "name", "quantity", "price", "cost_price"],
-  bookkeeping_entries: ["id", "name", "amount", "entry_date", "note", "created_at"],
+  purchase_order_items: ["id", "order_id", "name", "quantity", "price", "cost_price", "updated_at", "deleted_at"],
+  bookkeeping_entries: ["id", "name", "amount", "entry_date", "note", "created_at", "updated_at", "deleted_at"],
   bookkeeping_entry_history: [
     "id",
     "entry_id",
@@ -32,6 +36,8 @@ const TABLE_SCHEMAS = {
     "previous_amount",
     "new_amount",
     "created_at",
+    "updated_at",
+    "deleted_at",
   ],
   stock_history: [
     "id",
@@ -43,11 +49,51 @@ const TABLE_SCHEMAS = {
     "unit_price",
     "unit_cost",
     "profit_amount",
+    "updated_at",
+    "deleted_at",
   ],
+  master_orderers: ["id", "name", "phone", "address", "note", "created_at", "updated_at", "deleted_at"],
+  master_po_items: [
+    "id",
+    "name",
+    "category",
+    "default_price",
+    "default_cost_price",
+    "note",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+  ],
+  master_marketers: [
+    "id",
+    "name",
+    "phone",
+    "address",
+    "default_fee",
+    "note",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+  ],
+  calculator_entries: [
+    "id",
+    "item_name",
+    "base_price",
+    "shipping_fee",
+    "tax_fee",
+    "other_fee",
+    "total_price",
+    "note",
+    "items_json",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+  ],
+  notifications: ["id", "title", "message", "category", "is_read", "created_at", "updated_at", "deleted_at"],
 };
 
 const EXPORT_QUERIES = {
-  items: `SELECT id, name, category, price, cost_price, stock FROM items ORDER BY id ASC`,
+  items: `SELECT id, name, category, price, cost_price, stock, updated_at, deleted_at FROM items ORDER BY id ASC`,
   purchase_orders: `
     SELECT
       id,
@@ -60,39 +106,73 @@ const EXPORT_QUERIES = {
       note,
       created_at,
       orderer_name,
-      completed_at
+      marketer_name,
+      marketer_fee,
+      completed_at,
+      updated_at,
+      deleted_at
     FROM purchase_orders
     ORDER BY id ASC
   `,
   purchase_order_items: `
-    SELECT id, order_id, name, quantity, price, cost_price
+    SELECT id, order_id, name, quantity, price, cost_price, updated_at, deleted_at
     FROM purchase_order_items
     ORDER BY id ASC
   `,
   bookkeeping_entries: `
-    SELECT id, name, amount, entry_date, note, created_at
+    SELECT id, name, amount, entry_date, note, created_at, updated_at, deleted_at
     FROM bookkeeping_entries
     ORDER BY id ASC
   `,
   bookkeeping_entry_history: `
-    SELECT id, entry_id, change_amount, type, note, previous_amount, new_amount, created_at
+    SELECT id, entry_id, change_amount, type, note, previous_amount, new_amount, created_at, updated_at, deleted_at
     FROM bookkeeping_entry_history
     ORDER BY id ASC
   `,
   stock_history: `
-    SELECT id, item_id, type, qty, note, created_at, unit_price, unit_cost, profit_amount
+    SELECT id, item_id, type, qty, note, created_at, unit_price, unit_cost, profit_amount, updated_at, deleted_at
     FROM stock_history
+    ORDER BY id ASC
+  `,
+  master_orderers: `
+    SELECT id, name, phone, address, note, created_at, updated_at, deleted_at
+    FROM master_orderers
+    ORDER BY id ASC
+  `,
+  master_po_items: `
+    SELECT id, name, category, default_price, default_cost_price, note, created_at, updated_at, deleted_at
+    FROM master_po_items
+    ORDER BY id ASC
+  `,
+  master_marketers: `
+    SELECT id, name, phone, address, default_fee, note, created_at, updated_at, deleted_at
+    FROM master_marketers
+    ORDER BY id ASC
+  `,
+  calculator_entries: `
+    SELECT id, item_name, base_price, shipping_fee, tax_fee, other_fee, total_price, note, items_json, created_at, updated_at, deleted_at
+    FROM calculator_entries
+    ORDER BY id ASC
+  `,
+  notifications: `
+    SELECT id, title, message, category, is_read, created_at, updated_at, deleted_at
+    FROM notifications
     ORDER BY id ASC
   `,
 };
 
 const INSERT_ORDER = [
+  "master_orderers",
+  "master_po_items",
+  "master_marketers",
   "items",
   "purchase_orders",
   "purchase_order_items",
   "bookkeeping_entries",
   "bookkeeping_entry_history",
   "stock_history",
+  "calculator_entries",
+  "notifications",
 ];
 
 const CLEAR_ORDER = [...INSERT_ORDER].reverse();

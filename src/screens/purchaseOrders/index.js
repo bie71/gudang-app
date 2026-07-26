@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import * as Sharing from "expo-sharing";
 
 import FormScrollContainer from "../../components/FormScrollContainer";
 import DatePickerField from "../../components/DatePickerField";
+import MonthYearPickerField from "../../components/MonthYearPickerField";
 import Input from "../../components/Input";
 import IconActionButton from "../../components/IconActionButton";
 import DetailRow from "../../components/DetailRow";
@@ -38,6 +39,12 @@ import {
   parseNumberInput,
 } from "../../utils/format";
 import { buildOrderItemLabel } from "../../utils/purchaseOrders";
+import {
+  ensureMasterOrdererExists,
+  ensureMasterPoItemExists,
+  ensureMasterMarketerExists,
+  getMasterSuggestions,
+} from "../../services/masterDataHelper";
 import { getPOStatusStyle, PO_STATUS_OPTIONS, PO_STATUS_STYLES } from "../../constants";
 
 const ITEM_TABLE_MIN_WIDTH = 640;
@@ -205,7 +212,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
         style: "destructive",
         onPress: async () => {
           try {
-            await exec(`DELETE FROM purchase_orders WHERE id = ?`, [orderId]);
+            const nowIso = new Date().toISOString();
+            await exec(`UPDATE purchase_orders SET deleted_at = ?, updated_at = ? WHERE id = ?`, [nowIso, nowIso, orderId]);
             loadOrders({ search: searchTerm, reset: true });
           } catch (error) {
             console.log("PO LIST DELETE ERROR:", error);
@@ -250,6 +258,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             po.id,
             po.supplier_name,
             po.orderer_name,
+            po.marketer_name,
+            po.marketer_fee,
             po.status,
             po.order_date,
             po.note,
@@ -262,10 +272,12 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE (
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
+          AND (
             ? = ''
             OR LOWER(IFNULL(po.orderer_name,'')) LIKE ?
             OR LOWER(IFNULL(po.supplier_name,'')) LIKE ?
+            OR LOWER(IFNULL(po.marketer_name,'')) LIKE ?
             OR LOWER(IFNULL(po.item_name,'')) LIKE ?
             OR LOWER(IFNULL(po.note,'')) LIKE ?
             OR EXISTS (
@@ -280,6 +292,7 @@ export function PurchaseOrdersScreen({ route, navigation }) {
         `,
         [
           normalizedSearch,
+          `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
           `%${normalizedSearch}%`,
@@ -301,6 +314,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           id: row.id,
           supplierName: row.supplier_name,
           ordererName: row.orderer_name,
+          marketerName: row.marketer_name,
+          marketerFee: Number(row.marketer_fee ?? 0),
           itemName,
           primaryItemName,
           itemsCount: itemCount,
@@ -365,6 +380,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             po.completed_at,
             po.orderer_name,
             po.supplier_name,
+            po.marketer_name,
+            po.marketer_fee,
             po.status,
             po.note,
             po.close_po_date,
@@ -379,7 +396,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             ) as primary_item_name
           FROM purchase_orders po
           LEFT JOIN purchase_order_items items ON items.order_id = po.id
-          WHERE po.order_date BETWEEN ? AND ?
+          WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
+          AND po.order_date BETWEEN ? AND ?
           GROUP BY po.id
           ORDER BY po.order_date ASC, po.id ASC
         `,
@@ -395,6 +413,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           completedAt: row.completed_at,
           ordererName: row.orderer_name,
           supplierName: row.supplier_name,
+          marketerName: row.marketer_name,
+          marketerFee: Number(row.marketer_fee ?? 0),
           status: row.status,
           note: row.note,
           closePoDate: row.close_po_date,
@@ -424,7 +444,8 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           totalValueSum += entry.totalValue;
           totalQuantitySum += entry.totalQuantity;
           const totalCost = entry.totalCost ?? 0;
-          const totalProfit = entry.totalValue - totalCost;
+          const marketerFee = entry.marketerFee ?? 0;
+          const totalProfit = entry.totalValue - totalCost - marketerFee;
           totalCostSum += totalCost;
           totalProfitSum += totalProfit;
           const statusKey = entry.status || "PROGRESS";
@@ -432,17 +453,16 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           if (entry.supplierName) {
             supplierSet.add(entry.supplierName.trim().toLowerCase());
           }
-          const statusLabel = getPOStatusStyle(entry.status).label;
-          const supplierLabel = entry.supplierName ? escapeHtml(entry.supplierName) : "Tanpa pemasok";
-          const ordererLabel = entry.ordererName ? escapeHtml(entry.ordererName) : "Tanpa pemesan";
-          const noteText = entry.note ? escapeHtml(entry.note) : "-";
           const orderDateDisplay = escapeHtml(formatDateDisplay(entry.orderDate));
-          const createdDisplay = escapeHtml(formatDateTimeDisplay(entry.createdAt));
-          const completedDisplay = escapeHtml(
-            entry.completedAt ? formatDateTimeDisplay(entry.completedAt) : "Belum selesai",
-          );
-          const closePoDisplay = entry.closePoDate ? escapeHtml(formatDateDisplay(entry.closePoDate)) : "-";
-          const estimatedReadyDisplay = entry.estimatedReadyDate ? escapeHtml(formatDateDisplay(entry.estimatedReadyDate)) : "-";
+          const createdDisplay = escapeHtml(formatDateDisplay(entry.createdAt));
+          const completedDisplay = escapeHtml(entry.completedAt ? formatDateDisplay(entry.completedAt) : "-");
+          const closePoDisplay = escapeHtml(entry.closePoDate ? formatDateDisplay(entry.closePoDate) : "-");
+          const estimatedReadyDisplay = escapeHtml(entry.estimatedReadyDate ? formatDateDisplay(entry.estimatedReadyDate) : "-");
+          const supplierLabel = escapeHtml(entry.supplierName || "Tanpa Supplier");
+          const ordererLabel = escapeHtml(entry.ordererName || "Tanpa Pemesan");
+          const statusStyle = getPOStatusStyle(entry.status);
+          const statusLabel = statusStyle.label || entry.status || "PROGRESS";
+          const noteText = entry.note ? escapeHtml(entry.note).replace(/\n/g, "<br/>") : "-";
 
           const qtyDisplay = escapeHtml(formatNumberValue(entry.totalQuantity));
           const valueDisplay = escapeHtml(formatCurrencyValue(entry.totalValue));
@@ -453,6 +473,7 @@ export function PurchaseOrdersScreen({ route, navigation }) {
           const profitClass = totalProfit >= 0 ? "profit profit--positive" : "profit profit--negative";
           const itemLabel = buildOrderItemLabel(entry.primaryItemName, entry.itemCount || (entry.primaryItemName ? 1 : 0));
           const itemCountLabel = escapeHtml(`${formatNumberValue(entry.itemCount || (entry.primaryItemName ? 1 : 0))} barang`);
+          const marketerMeta = entry.marketerName ? `<div class="party-meta" style="color: #d97706; font-weight: 600;">Marketer: ${escapeHtml(entry.marketerName)}</div>` : "";
           return `
             <tr>
               <td class="col-index">${index + 1}</td>
@@ -466,6 +487,7 @@ export function PurchaseOrdersScreen({ route, navigation }) {
               <td class="col-party">
                 <div class="party-name">${supplierLabel}</div>
                 <div class="party-meta">Pemesan: ${ordererLabel}</div>
+                ${marketerMeta}
               </td>
               <td class="col-status">${escapeHtml(statusLabel)}</td>
               <td class="col-item">
@@ -767,6 +789,11 @@ export function PurchaseOrdersScreen({ route, navigation }) {
             <Text style={{ fontSize: 13, fontWeight: "500", color: "#64748B", marginTop: 2 }}>
               Pemesan: {item.ordererName || "Tanpa Pemesan"}
             </Text>
+            {Boolean(item.marketerName) && (
+              <Text style={{ fontSize: 12, fontWeight: "600", color: "#D97706", marginTop: 2 }}>
+                Marketer: {item.marketerName}
+              </Text>
+            )}
             <Text style={{ fontSize: 13, fontWeight: "600", color: "#0F172A", marginTop: 4 }}>
               {item.itemName}
             </Text>
@@ -1136,13 +1163,34 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
   });
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
+  const [marketerName, setMarketerName] = useState("");
+  const [marketerFee, setMarketerFee] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
   const [closePoDate, setClosePoDate] = useState("");
   const [estimatedReadyDate, setEstimatedReadyDate] = useState("");
   const [status, setStatus] = useState("PROGRESS");
   const [note, setNote] = useState("");
   const [items, setItems] = useState([createEmptyItem()]);
+  const [masterSuggestions, setMasterSuggestions] = useState({ orderers: [], items: [], marketers: [] });
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    getMasterSuggestions().then(res => setMasterSuggestions(res));
+  }, []);
+
+  const filteredOrdererSuggestions = useMemo(() => {
+    if (!ordererName || !masterSuggestions.orderers.length) return [];
+    return masterSuggestions.orderers.filter(
+      name => name.toLowerCase().includes(ordererName.toLowerCase()) && name.toLowerCase() !== ordererName.toLowerCase(),
+    );
+  }, [ordererName, masterSuggestions.orderers]);
+
+  const filteredMarketerSuggestions = useMemo(() => {
+    if (!marketerName || !masterSuggestions.marketers?.length) return [];
+    return masterSuggestions.marketers.filter(
+      item => item.name.toLowerCase().includes(marketerName.toLowerCase()) && item.name.toLowerCase() !== marketerName.toLowerCase(),
+    );
+  }, [marketerName, masterSuggestions.marketers]);
 
   const updateItemField = (index, field, value) => {
     setItems(prev => {
@@ -1205,15 +1253,18 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
     const firstItem = activeItems[0];
     const summaryName = buildOrderItemLabel(firstItem.name, activeItems.length);
     const completedAtValue = status === "DONE" ? new Date().toISOString() : null;
+    const marketerFeeValue = parseNumberInput(marketerFee);
 
     try {
       await exec("BEGIN TRANSACTION");
       const insertRes = await exec(
-        `INSERT INTO purchase_orders (supplier_name, orderer_name, item_name, quantity, price, order_date, status, note, completed_at, close_po_date, estimated_ready_date)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO purchase_orders (supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, completed_at, close_po_date, estimated_ready_date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           supplierName || null,
           ordererName || null,
+          marketerName || null,
+          marketerFeeValue,
           summaryName,
           firstItem.quantity,
           firstItem.price,
@@ -1236,16 +1287,32 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
         );
       }
       await exec("COMMIT");
-      onDone && onDone();
+
+      // Auto-insert ke data master Pemesan, Barang PO, & Marketer
+      try {
+        if (ordererName) {
+          await ensureMasterOrdererExists(ordererName);
+        }
+        if (marketerName) {
+          await ensureMasterMarketerExists(marketerName, marketerFeeValue);
+        }
+        for (const entry of activeItems) {
+          if (entry.name) {
+            await ensureMasterPoItemExists(entry.name, entry.price, entry.costPrice);
+          }
+        }
+      } catch (masterErr) {
+        console.log("AUTO INSERT MASTER ERROR:", masterErr);
+      }
+
+      if (typeof onDone === "function") {
+        onDone();
+      }
       navigation.goBack();
     } catch (error) {
-      try {
-        await exec("ROLLBACK");
-      } catch (rollbackError) {
-        console.log("PO INSERT ROLLBACK ERROR:", rollbackError);
-      }
+      await exec("ROLLBACK");
       console.log("PO INSERT ERROR:", error);
-      Alert.alert("Gagal", "Purchase order tidak dapat disimpan.");
+      Alert.alert("Gagal", error.message || "Tidak dapat menyimpan purchase order.");
     }
   }
 
@@ -1255,6 +1322,59 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Tambah Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
+        {filteredOrdererSuggestions.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+            {filteredOrdererSuggestions.map((name, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => setOrdererName(name)}
+                style={{
+                  backgroundColor: "#EEF2FF",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  marginRight: 6,
+                  borderWidth: 1,
+                  borderColor: "#C7D2FE",
+                }}
+              >
+                <Text style={{ color: "#4F46E5", fontSize: 12, fontWeight: "600" }}>👤 {name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <Input label="Nama Marketer (opsional)" value={marketerName} onChangeText={setMarketerName} placeholder="contoh: Andi Marketing" />
+        {filteredMarketerSuggestions.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+            {filteredMarketerSuggestions.map((m, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => {
+                  setMarketerName(m.name);
+                  if (m.default_fee) setMarketerFee(formatNumberInput(String(m.default_fee)));
+                }}
+                style={{
+                  backgroundColor: "#FEF3C7",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  marginRight: 6,
+                  borderWidth: 1,
+                  borderColor: "#FDE68A",
+                }}
+              >
+                <Text style={{ color: "#D97706", fontSize: 12, fontWeight: "600" }}>{m.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <Input
+          label="Fee Marketer (Rp)"
+          value={marketerFee}
+          onChangeText={text => setMarketerFee(formatNumberInput(text))}
+          keyboardType="numeric"
+          placeholder="contoh: 50000"
+        />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
           {items.map((item, index) => {
@@ -1264,6 +1384,13 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
             const lineTotal = qtyValue * priceValue;
             const lineCost = qtyValue * costValue;
             const lineProfit = lineTotal - lineCost;
+
+            const itemSuggestions = item.name && masterSuggestions.items.length
+              ? masterSuggestions.items.filter(
+                  m => m.name.toLowerCase().includes(item.name.toLowerCase()) && m.name.toLowerCase() !== item.name.toLowerCase()
+                )
+              : [];
+
             return (
               <View
                 key={item.key}
@@ -1290,6 +1417,31 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
                   onChangeText={text => updateItemField(index, "name", text)}
                   placeholder="contoh: Kardus 40x40"
                 />
+                {itemSuggestions.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+                    {itemSuggestions.map((m, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        onPress={() => {
+                          updateItemField(index, "name", m.name);
+                          if (m.default_price) updateItemField(index, "price", formatNumberInput(String(m.default_price)));
+                          if (m.default_cost_price) updateItemField(index, "costPrice", formatNumberInput(String(m.default_cost_price)));
+                        }}
+                        style={{
+                          backgroundColor: "#EEF2FF",
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 16,
+                          marginRight: 6,
+                          borderWidth: 1,
+                          borderColor: "#C7D2FE",
+                        }}
+                      >
+                        <Text style={{ color: "#4F46E5", fontSize: 12, fontWeight: "600" }}>📦 {m.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
                 <Input
                   label="Qty"
                   value={item.quantity}
@@ -1354,7 +1506,7 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
         </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <DatePickerField label="Tanggal Close PO" value={closePoDate} onChange={setClosePoDate} />
-        <DatePickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
+        <MonthYearPickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -1417,6 +1569,8 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [supplierName, setSupplierName] = useState("");
   const [ordererName, setOrdererName] = useState("");
+  const [marketerName, setMarketerName] = useState("");
+  const [marketerFee, setMarketerFee] = useState("");
   const [orderDate, setOrderDate] = useState(formatDateInputValue(new Date()));
   const [closePoDate, setClosePoDate] = useState("");
   const [estimatedReadyDate, setEstimatedReadyDate] = useState("");
@@ -1433,7 +1587,26 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     costPrice: "",
   });
   const [items, setItems] = useState([createEmptyItem()]);
+  const [masterSuggestions, setMasterSuggestions] = useState({ orderers: [], items: [], marketers: [] });
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    getMasterSuggestions().then(res => setMasterSuggestions(res));
+  }, []);
+
+  const filteredOrdererSuggestions = useMemo(() => {
+    if (!ordererName || !masterSuggestions.orderers.length) return [];
+    return masterSuggestions.orderers.filter(
+      name => name.toLowerCase().includes(ordererName.toLowerCase()) && name.toLowerCase() !== ordererName.toLowerCase(),
+    );
+  }, [ordererName, masterSuggestions.orderers]);
+
+  const filteredMarketerSuggestions = useMemo(() => {
+    if (!marketerName || !masterSuggestions.marketers?.length) return [];
+    return masterSuggestions.marketers.filter(
+      item => item.name.toLowerCase().includes(marketerName.toLowerCase()) && item.name.toLowerCase() !== marketerName.toLowerCase(),
+    );
+  }, [marketerName, masterSuggestions.marketers]);
 
   useEffect(() => {
     async function load() {
@@ -1448,9 +1621,11 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         const orderRow = orderRes.rows.item(0);
         setSupplierName(orderRow.supplier_name || "");
         setOrdererName(orderRow.orderer_name || "");
+        setMarketerName(orderRow.marketer_name || "");
+        setMarketerFee(orderRow.marketer_fee ? formatNumberInput(String(orderRow.marketer_fee)) : "");
         setOrderDate(formatDateInputValue(orderRow.order_date));
         setClosePoDate(orderRow.close_po_date ? formatDateInputValue(orderRow.close_po_date) : "");
-        setEstimatedReadyDate(orderRow.estimated_ready_date ? formatDateInputValue(orderRow.estimated_ready_date) : "");
+        setEstimatedReadyDate(orderRow.estimated_ready_date || "");
         const nextStatus = orderRow.status || "PROGRESS";
         setStatus(nextStatus);
         setInitialStatus(nextStatus);
@@ -1559,15 +1734,18 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
     } else {
       completedAtValue = null;
     }
+    const marketerFeeValue = parseNumberInput(marketerFee);
 
     try {
       await exec("BEGIN TRANSACTION");
       await exec(
-        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?, completed_at = ?, close_po_date = ?, estimated_ready_date = ?
+        `UPDATE purchase_orders SET supplier_name = ?, orderer_name = ?, marketer_name = ?, marketer_fee = ?, item_name = ?, quantity = ?, price = ?, order_date = ?, status = ?, note = ?, completed_at = ?, close_po_date = ?, estimated_ready_date = ?
          WHERE id = ?`,
         [
           supplierName || null,
           ordererName || null,
+          marketerName || null,
+          marketerFeeValue,
           summaryName,
           firstItem.quantity,
           firstItem.price,
@@ -1588,24 +1766,39 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         );
       }
       await exec("COMMIT");
-      onDone && onDone();
+
+      // Auto-insert ke data master Pemesan, Barang PO, & Marketer
+      try {
+        if (ordererName) {
+          await ensureMasterOrdererExists(ordererName);
+        }
+        if (marketerName) {
+          await ensureMasterMarketerExists(marketerName, marketerFeeValue);
+        }
+        for (const entry of activeItems) {
+          if (entry.name) {
+            await ensureMasterPoItemExists(entry.name, entry.price, entry.costPrice);
+          }
+        }
+      } catch (masterErr) {
+        console.log("AUTO INSERT MASTER ERROR:", masterErr);
+      }
+
+      if (typeof onDone === "function") {
+        onDone();
+      }
       navigation.goBack();
     } catch (error) {
-      try {
-        await exec("ROLLBACK");
-      } catch (rollbackError) {
-        console.log("PO UPDATE ROLLBACK ERROR:", rollbackError);
-      }
-      console.log("PO UPDATE ERROR:", error);
-      Alert.alert("Gagal", "Purchase order tidak dapat diperbarui.");
+      await exec("ROLLBACK");
+      console.log("PO EDIT ERROR:", error);
+      Alert.alert("Gagal", error.message || "Tidak dapat memperbarui purchase order.");
     }
   }
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color="#2563EB" />
-        <Text style={{ marginTop: 12, color: "#64748B" }}>Memuat…</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#2563EB" />
       </SafeAreaView>
     );
   }
@@ -1616,6 +1809,59 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>Edit Purchase Order</Text>
         <Input label="Nama Pemasok" value={supplierName} onChangeText={setSupplierName} placeholder="contoh: PT ABC" />
         <Input label="Nama Pemesan" value={ordererName} onChangeText={setOrdererName} placeholder="contoh: Budi Hartono" />
+        {filteredOrdererSuggestions.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+            {filteredOrdererSuggestions.map((name, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => setOrdererName(name)}
+                style={{
+                  backgroundColor: "#EEF2FF",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  marginRight: 6,
+                  borderWidth: 1,
+                  borderColor: "#C7D2FE",
+                }}
+              >
+                <Text style={{ color: "#4F46E5", fontSize: 12, fontWeight: "600" }}>👤 {name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <Input label="Nama Marketer (opsional)" value={marketerName} onChangeText={setMarketerName} placeholder="contoh: Andi Marketing" />
+        {filteredMarketerSuggestions.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+            {filteredMarketerSuggestions.map((m, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => {
+                  setMarketerName(m.name);
+                  if (m.default_fee) setMarketerFee(formatNumberInput(String(m.default_fee)));
+                }}
+                style={{
+                  backgroundColor: "#FEF3C7",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  marginRight: 6,
+                  borderWidth: 1,
+                  borderColor: "#FDE68A",
+                }}
+              >
+                <Text style={{ color: "#D97706", fontSize: 12, fontWeight: "600" }}>{m.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <Input
+          label="Fee Marketer (Rp)"
+          value={marketerFee}
+          onChangeText={text => setMarketerFee(formatNumberInput(text))}
+          keyboardType="numeric"
+          placeholder="contoh: 50000"
+        />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Daftar Barang</Text>
           {items.map((item, index) => {
@@ -1625,6 +1871,13 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
             const lineTotal = qtyValue * priceValue;
             const lineCost = qtyValue * costValue;
             const lineProfit = lineTotal - lineCost;
+
+            const itemSuggestions = item.name && masterSuggestions.items.length
+              ? masterSuggestions.items.filter(
+                  m => m.name.toLowerCase().includes(item.name.toLowerCase()) && m.name.toLowerCase() !== item.name.toLowerCase()
+                )
+              : [];
+
             return (
               <View
                 key={item.key}
@@ -1651,6 +1904,31 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
                   onChangeText={text => updateItemField(index, "name", text)}
                   placeholder="contoh: Kardus 40x40"
                 />
+                {itemSuggestions.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: -6, marginBottom: 12 }}>
+                    {itemSuggestions.map((m, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        onPress={() => {
+                          updateItemField(index, "name", m.name);
+                          if (m.default_price) updateItemField(index, "price", formatNumberInput(String(m.default_price)));
+                          if (m.default_cost_price) updateItemField(index, "costPrice", formatNumberInput(String(m.default_cost_price)));
+                        }}
+                        style={{
+                          backgroundColor: "#EEF2FF",
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 16,
+                          marginRight: 6,
+                          borderWidth: 1,
+                          borderColor: "#C7D2FE",
+                        }}
+                      >
+                        <Text style={{ color: "#4F46E5", fontSize: 12, fontWeight: "600" }}>📦 {m.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
                 <Input
                   label="Qty"
                   value={item.quantity}
@@ -1715,7 +1993,7 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
         </View>
         <DatePickerField label="Tanggal PO" value={orderDate} onChange={setOrderDate} />
         <DatePickerField label="Tanggal Close PO" value={closePoDate} onChange={setClosePoDate} />
-        <DatePickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
+        <MonthYearPickerField label="Estimasi Ready Barang" value={estimatedReadyDate} onChange={setEstimatedReadyDate} />
         <View style={{ marginBottom: 12 }}>
           <Text style={{ marginBottom: 6, color: "#475569" }}>Status</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -1825,13 +2103,16 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
       const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
       const totalValue = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.price || 0), 0);
       const totalCost = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.costPrice || 0), 0);
-      const totalProfit = totalValue - totalCost;
+      const marketerFee = Number(row.marketer_fee ?? 0);
+      const totalProfit = totalValue - totalCost - marketerFee;
       const primaryItemName = items.length ? items[0].name : row.item_name || "";
       const itemName = buildOrderItemLabel(primaryItemName, items.length || (primaryItemName ? 1 : 0));
       setOrder({
         id: row.id,
         supplierName: row.supplier_name,
         ordererName: row.orderer_name,
+        marketerName: row.marketer_name,
+        marketerFee,
         itemName,
         primaryItemName,
         items,
@@ -1915,7 +2196,8 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
 
   async function deleteOrder() {
     try {
-      await exec(`DELETE FROM purchase_orders WHERE id = ?`, [orderId]);
+      const nowIso = new Date().toISOString();
+      await exec(`UPDATE purchase_orders SET deleted_at = ?, updated_at = ? WHERE id = ?`, [nowIso, nowIso, orderId]);
       onDone && onDone();
       navigation.goBack();
     } catch (error) {
@@ -2618,6 +2900,10 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
           <View style={{ marginTop: 16, gap: 12 }}>
             <DetailRow label="Pemasok" value={order.supplierName || "-"} />
             <DetailRow label="Pemesan" value={order.ordererName || "-"} />
+            {Boolean(order.marketerName) && <DetailRow label="Marketer" value={order.marketerName} valueColor="#D97706" />}
+            {Boolean(order.marketerFee) && (
+              <DetailRow label="Fee Marketer" value={formatCurrencyValue(order.marketerFee)} valueColor="#D97706" bold />
+            )}
             <DetailRow label="Tanggal PO" value={formatDateDisplay(order.orderDate)} />
             <DetailRow label="Tanggal Close PO" value={order.closePoDate ? formatDateDisplay(order.closePoDate) : "-"} />
             <DetailRow label="Estimasi Ready" value={order.estimatedReadyDate ? formatDateDisplay(order.estimatedReadyDate) : "-"} />
@@ -2625,10 +2911,11 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
             <DetailRow label="Total Qty" value={`${quantityDisplay} pcs`} />
             <DetailRow label="Nilai Total" value={totalDisplay} bold />
             <DetailRow label="Total Modal" value={totalCostDisplay} />
-            <DetailRow label="Total Profit" value={totalProfitLabel} />
+            <DetailRow label="Total Profit Net" value={totalProfitLabel} bold />
             <DetailRow label="Dibuat" value={formatDateDisplay(order.createdAt)} />
             {isDone ? <DetailRow label="Selesai" value={completedDisplay} /> : null}
             <DetailRow label="Catatan" value={order.note || "-"} multiline />
+          </View>
         </View>
         <View
           style={{
@@ -2655,9 +2942,24 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
               <Text style={{ color: "#64748B" }}>Total Modal</Text>
               <Text style={{ color: "#0F172A", fontWeight: "600" }}>{totalCostDisplay}</Text>
             </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={{ color: "#64748B" }}>Total Profit</Text>
-              <Text style={{ color: profitColor, fontWeight: "700" }}>{totalProfitLabel}</Text>
+            {Boolean(order.marketerFee) && (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFFBEB", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "#FDE68A" }}>
+                <Text style={{ color: "#B45309", fontWeight: "600", fontSize: 13 }}>Fee Marketer ({order.marketerName || "Marketer"})</Text>
+                <Text style={{ color: "#D97706", fontWeight: "700", fontSize: 14 }}>
+                  - {formatCurrencyValue(order.marketerFee)}
+                </Text>
+              </View>
+            )}
+            <View style={{ borderTopWidth: 1, borderTopColor: "#F1F5F9", paddingTop: 8 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View>
+                  <Text style={{ color: "#0F172A", fontWeight: "700" }}>Total Profit Net</Text>
+                  <Text style={{ fontSize: 10, color: "#64748B", fontStyle: "italic" }}>
+                    *setelah dipotong fee marketer
+                  </Text>
+                </View>
+                <Text style={{ color: profitColor, fontWeight: "700", fontSize: 16 }}>{totalProfitLabel}</Text>
+              </View>
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={{ color: "#64748B" }}>Selesai</Text>
@@ -2706,7 +3008,6 @@ export function PurchaseOrderDetailScreen({ route, navigation }) {
         <View style={{ marginTop: 20 }}>
           <Text style={{ color: "#0F172A", fontWeight: "600", marginBottom: 10 }}>Daftar Barang</Text>
           <InvoiceItemsTable horizontal keyPrefix="summary" />
-        </View>
         </View>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, rowGap: 18 }}>

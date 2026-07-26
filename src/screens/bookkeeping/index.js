@@ -184,13 +184,19 @@ export function BookkeepingScreen({ route, navigation }) {
     }
   };
 
-  async function loadEntries({ search = searchTerm, reset = false, mode = "default" } = {}) {
+  const loadEntries = useCallback(async ({ search = searchTerm, reset = false, mode = "default" } = {}) => {
     const normalizedSearch = (search || "").trim().toLowerCase();
     const isSearchChanged = normalizedSearch !== pagingRef.current.search;
     const shouldReset = reset || isSearchChanged;
-    const offset = shouldReset ? 0 : pagingRef.current.offset;
+
     const limit = PAGE_SIZE + 1;
+    const offset = shouldReset ? 0 : pagingRef.current.offset;
     const requestId = ++requestIdRef.current;
+
+    if (shouldReset) {
+      pagingRef.current = { offset: 0, search: normalizedSearch };
+      setHasMore(false);
+    }
 
     if (mode === "refresh") setRefreshing(true);
     else if (mode === "loadMore") setLoadingMore(true);
@@ -201,7 +207,8 @@ export function BookkeepingScreen({ route, navigation }) {
         `
           SELECT id, name, amount, entry_date, note
           FROM bookkeeping_entries
-          WHERE (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
+          WHERE (deleted_at IS NULL OR deleted_at = '')
+          AND (? = '' OR LOWER(name) LIKE ? OR LOWER(IFNULL(note,'')) LIKE ?)
           ORDER BY entry_date DESC, id DESC
           LIMIT ? OFFSET ?
         `,
@@ -232,15 +239,16 @@ export function BookkeepingScreen({ route, navigation }) {
         else setLoading(false);
       }
     }
-  }
+  }, [searchTerm]);
 
-  async function loadSummary() {
+  const loadSummary = useCallback(async () => {
     try {
       const res = await exec(`
         SELECT
           COUNT(*) as totalEntries,
           IFNULL(SUM(amount), 0) as totalAmount
         FROM bookkeeping_entries
+        WHERE (deleted_at IS NULL OR deleted_at = '')
       `);
       const row = res.rows.length ? res.rows.item(0) : {};
       setSummary({
@@ -250,7 +258,7 @@ export function BookkeepingScreen({ route, navigation }) {
     } catch (error) {
       console.log("BOOKKEEPING SUMMARY ERROR:", error);
     }
-  }
+  }, []);
 
   const handleRefresh = () => {
     loadSummary();
@@ -1595,7 +1603,8 @@ export function BookkeepingDetailScreen({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              await exec(`DELETE FROM bookkeeping_entries WHERE id = ?`, [entry.id]);
+              const nowIso = new Date().toISOString();
+              await exec(`UPDATE bookkeeping_entries SET deleted_at = ?, updated_at = ? WHERE id = ?`, [nowIso, nowIso, entry.id]);
               refreshParent();
               navigation.goBack();
             } catch (error) {
