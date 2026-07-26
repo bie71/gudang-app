@@ -49,7 +49,7 @@ const TABLE_SCHEMAS = {
 // Ambil valid access token
 async function getValidAccessToken() {
   const token = await getStoredDriveToken();
-  if (!token) return null;
+  if (!token || !token.accessToken) return null;
   if (isDriveTokenValid(token)) return token.accessToken;
 
   const clientId = getClientId();
@@ -68,12 +68,8 @@ async function getValidAccessToken() {
     }
   }
 
-  if (!isDriveTokenValid(token)) {
-    await clearDriveToken();
-    return null;
-  }
-
-  return token.accessToken || null;
+  // Gunakan token.accessToken yang ada, biarkan panggilan API menguji validitasnya
+  return token.accessToken;
 }
 
 // Cari ID file gudang_app_sync.json di Drive

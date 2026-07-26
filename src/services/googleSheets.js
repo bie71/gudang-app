@@ -35,28 +35,28 @@ async function handleSheetsResponseError(response, actionLabel) {
 
 export async function getSheetsAccessToken() {
   let token = await getStoredDriveToken();
-  if (!token) {
+  if (!token || !token.accessToken) {
     throw new Error("Silakan hubungkan akun Google Anda terlebih dahulu di menu Manajemen Data.");
   }
   
-  if (!isDriveTokenValid(token)) {
-    if (token.refreshToken) {
-      const clientId = getClientId();
-      try {
-        token = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
-      } catch (error) {
-        console.log("GOOGLE SHEETS REFRESH ACCESS TOKEN ERROR:", error);
-        if (error?.isInvalidGrant) {
-          await clearDriveToken();
-        }
+  if (isDriveTokenValid(token)) {
+    return token.accessToken;
+  }
+
+  if (token.refreshToken) {
+    const clientId = getClientId();
+    try {
+      token = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
+      if (token?.accessToken) return token.accessToken;
+    } catch (error) {
+      console.log("GOOGLE SHEETS REFRESH ACCESS TOKEN ERROR:", error);
+      if (error?.isInvalidGrant) {
+        await clearDriveToken();
         throw new Error("Sesi login Google Anda telah berakhir. Silakan login kembali di menu Manajemen Data.");
       }
-    } else {
-      await clearDriveToken();
-      throw new Error("Sesi login Google Anda telah berakhir. Silakan login kembali di menu Manajemen Data.");
     }
   }
-  
+
   return token.accessToken;
 }
 
