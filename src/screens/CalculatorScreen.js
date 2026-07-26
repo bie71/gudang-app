@@ -603,7 +603,7 @@ export function CalculatorScreen() {
       {/* FAB */}
       <TouchableOpacity
         activeOpacity={0.85}
-        onPress={openAddForm}
+        onPress={openCreateModal}
         style={{
           position: "absolute",
           bottom: 20,

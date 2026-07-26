@@ -345,6 +345,65 @@ export default function GoogleSheetsScreen({ navigation }) {
     setIsAddModalOpen(true);
   };
 
+  // Bulk Selection Handlers
+  const handleSelectAll = () => {
+    const allFilteredIndices = filteredAllRows.map(r => rows.indexOf(r)).filter(idx => idx !== -1);
+    if (selectedIndices.length === allFilteredIndices.length) {
+      setSelectedIndices([]);
+    } else {
+      setSelectedIndices(allFilteredIndices);
+    }
+  };
+
+  const toggleRowSelection = (originalIndex) => {
+    if (originalIndex === -1) return;
+    setSelectedIndices(prev => {
+      if (prev.includes(originalIndex)) {
+        const next = prev.filter(i => i !== originalIndex);
+        if (next.length === 0) {
+          setSelectionMode(false);
+        }
+        return next;
+      } else {
+        return [...prev, originalIndex];
+      }
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIndices.length === 0) return;
+
+    Alert.alert(
+      "Hapus Baris Terpilih",
+      "Apakah Anda yakin ingin menghapus " + selectedIndices.length + " baris data terpilih ini secara permanen dari Google Sheet?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const sheetIndices = selectedIndices.map(idx => idx + 1);
+              await deleteMultipleSheetRows(spreadsheetId, sheetName, sheetIndices);
+
+              const toRemove = new Set(selectedIndices);
+              setRows(prev => prev.filter((_, idx) => !toRemove.has(idx)));
+              setSelectionMode(false);
+              setSelectedIndices([]);
+              Alert.alert("Berhasil", selectedIndices.length + " baris berhasil dihapus.");
+            } catch (error) {
+              console.log("BULK DELETE ERROR:", error);
+              Alert.alert("Gagal Hapus", error?.message || "Gagal menghapus baris terpilih.");
+            } finally {
+              setBulkDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Saring data berdasarkan pencarian
   const filteredAllRows = useMemo(() => {
     if (!searchQuery.trim()) return rows;
