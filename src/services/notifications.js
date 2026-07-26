@@ -1,11 +1,12 @@
-import { exec } from "./database";
+import { exec, generateUniqueNumericId } from "./database";
 
 // Menambahkan notifikasi baru ke database
 export async function addNotification(title, message, category) {
   try {
+    const newId = generateUniqueNumericId();
     await exec(
-      "INSERT INTO notifications (title, message, category, is_read) VALUES (?, ?, ?, 0)",
-      [title, message, category]
+      "INSERT INTO notifications (id, title, message, category, is_read) VALUES (?, ?, ?, ?, 0)",
+      [newId, title, message, category]
     );
     console.log(`NOTIFICATION ADDED: ${title}`);
   } catch (error) {

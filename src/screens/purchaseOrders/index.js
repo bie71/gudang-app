@@ -24,7 +24,7 @@ import MonthYearPickerField from "../../components/MonthYearPickerField";
 import Input from "../../components/Input";
 import IconActionButton from "../../components/IconActionButton";
 import DetailRow from "../../components/DetailRow";
-import { exec } from "../../services/database";
+import { exec, generateUniqueNumericId } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import { exportPurchaseOrdersCsv } from "../../services/export";
 import {
@@ -1257,10 +1257,12 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
 
     try {
       await exec("BEGIN TRANSACTION");
-      const insertRes = await exec(
-        `INSERT INTO purchase_orders (supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, completed_at, close_po_date, estimated_ready_date)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      const orderId = generateUniqueNumericId();
+      await exec(
+        `INSERT INTO purchase_orders (id, supplier_name, orderer_name, marketer_name, marketer_fee, item_name, quantity, price, order_date, status, note, completed_at, close_po_date, estimated_ready_date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
+          orderId,
           supplierName || null,
           ordererName || null,
           marketerName || null,
@@ -1276,14 +1278,11 @@ export function AddPurchaseOrderScreen({ route, navigation }) {
           estimatedReadyDate || null,
         ],
       );
-      const orderId = insertRes.insertId;
-      if (!orderId) {
-        throw new Error("Gagal mendapatkan ID purchase order");
-      }
       for (const entry of activeItems) {
+        const poItemId = generateUniqueNumericId();
         await exec(
-          `INSERT INTO purchase_order_items (order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?)`,
-          [orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
+          `INSERT INTO purchase_order_items (id, order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?,?)`,
+          [poItemId, orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
         );
       }
       await exec("COMMIT");
@@ -1760,9 +1759,10 @@ export function EditPurchaseOrderScreen({ route, navigation }) {
       );
       await exec(`DELETE FROM purchase_order_items WHERE order_id = ?`, [orderId]);
       for (const entry of activeItems) {
+        const poItemId = generateUniqueNumericId();
         await exec(
-          `INSERT INTO purchase_order_items (order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?)`,
-          [orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
+          `INSERT INTO purchase_order_items (id, order_id, name, quantity, price, cost_price) VALUES (?,?,?,?,?,?)`,
+          [poItemId, orderId, entry.name, entry.quantity, entry.price, entry.costPrice],
         );
       }
       await exec("COMMIT");

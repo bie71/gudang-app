@@ -23,7 +23,7 @@ import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
 import DatePickerField from "../../components/DatePickerField";
-import { exec } from "../../services/database";
+import { exec, generateUniqueNumericId } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import { exportItemsCsv } from "../../services/export";
 import {
@@ -1552,18 +1552,17 @@ export function AddItemScreen({ route, navigation }) {
         [name, category, p, c, s, size, itemId],
       );
     } else {
-      const insertRes = await exec(
-        `INSERT INTO items(name, category, price, cost_price, stock, size) VALUES (?,?,?,?,?,?)`,
-        [name, category, p, c, s, size],
+      const newId = generateUniqueNumericId();
+      await exec(
+        `INSERT INTO items(id, name, category, price, cost_price, stock, size) VALUES (?,?,?,?,?,?,?)`,
+        [newId, name, category, p, c, s, size],
       );
       if (s > 0) {
-        const id = insertRes.insertId;
-        if (id) {
-          await exec(
-            `INSERT INTO stock_history(item_id, type, qty, note, unit_price, unit_cost, profit_amount) VALUES (?,?,?,?,?,?,?)`,
-            [id, "IN", s, "Init stock", null, c || 0, 0],
-          );
-        }
+        const historyId = generateUniqueNumericId();
+        await exec(
+          `INSERT INTO stock_history(id, item_id, type, qty, note, unit_price, unit_cost, profit_amount) VALUES (?,?,?,?,?,?,?,?)`,
+          [historyId, newId, "IN", s, "Init stock", null, c || 0, 0],
+        );
       }
     }
     onDone && onDone();
@@ -1688,9 +1687,11 @@ export function StockMoveScreen({ route, navigation }) {
     const unitPrice = Number(item.price ?? 0);
     const unitCost = Number(item.costPrice ?? 0);
     const profitAmount = mode === "OUT" ? (unitPrice - unitCost) * q : 0;
+    const historyId = generateUniqueNumericId();
     await exec(
-      `INSERT INTO stock_history(item_id, type, qty, note, unit_price, unit_cost, profit_amount) VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO stock_history(id, item_id, type, qty, note, unit_price, unit_cost, profit_amount) VALUES (?,?,?,?,?,?,?,?)`,
       [
+        historyId,
         item.id,
         mode,
         q,

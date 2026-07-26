@@ -300,6 +300,12 @@ export async function exec(sql, params = []) {
   }
 }
 
+export function generateUniqueNumericId() {
+  const now = Date.now();
+  const randomSuffix = Math.floor(Math.random() * 1000);
+  return now * 1000 + randomSuffix;
+}
+
 // Hook untuk mendeteksi perubahan SQLite lokal dan mengirimkannya ke Google Sheets
 async function handleDatabaseChangeHook(query, params, result) {
   const trimmed = query.trim().toUpperCase();
@@ -331,7 +337,7 @@ async function handleDatabaseChangeHook(query, params, result) {
 
   // 1. DATA BARANG (ITEMS)
   if (trimmed.includes("INSERT INTO ITEMS")) {
-    const id = result.insertId;
+    const id = result.insertId || params[0];
     if (id) {
       const row = await queryRow("items", id);
       if (row) await syncLocalToGoogleSheets("barang", "create", row);
@@ -349,7 +355,7 @@ async function handleDatabaseChangeHook(query, params, result) {
 
   // 2. PURCHASE ORDERS (PO)
   else if (trimmed.includes("INSERT INTO PURCHASE_ORDERS")) {
-    const id = result.insertId;
+    const id = result.insertId || params[0];
     if (id) {
       const row = await queryRow("purchase_orders", id);
       if (row) await syncLocalToGoogleSheets("po", "create", row);
@@ -367,7 +373,7 @@ async function handleDatabaseChangeHook(query, params, result) {
 
   // 3. KEUANGAN (BOOKKEEPING)
   else if (trimmed.includes("INSERT INTO BOOKKEEPING_ENTRIES")) {
-    const id = result.insertId;
+    const id = result.insertId || params[0];
     if (id) {
       const row = await queryRow("bookkeeping_entries", id);
       if (row) await syncLocalToGoogleSheets("keuangan", "create", row);
@@ -385,7 +391,7 @@ async function handleDatabaseChangeHook(query, params, result) {
 
   // 4. KALKULATOR BIAYA (CALCULATOR)
   else if (trimmed.includes("INSERT INTO CALCULATOR_ENTRIES")) {
-    const id = result.insertId;
+    const id = result.insertId || params[0];
     if (id) {
       const row = await queryRow("calculator_entries", id);
       if (row) await syncLocalToGoogleSheets("kalkulator", "create", row);

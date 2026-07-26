@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import ViewShot from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 
-import { exec } from "../services/database";
+import { exec, generateUniqueNumericId } from "../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../services/files";
 import IconActionButton from "../components/IconActionButton";
 import {
@@ -261,10 +261,11 @@ export function CalculatorScreen() {
           [titleName, subtotal, ship, tax, other, grandTotal, note.trim(), itemsJson, editingEntry.id]
         );
       } else {
+        const newCalcId = generateUniqueNumericId();
         await exec(
-          `INSERT INTO calculator_entries (item_name, base_price, shipping_fee, tax_fee, other_fee, total_price, note, items_json) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [titleName, subtotal, ship, tax, other, grandTotal, note.trim(), itemsJson]
+          `INSERT INTO calculator_entries (id, item_name, base_price, shipping_fee, tax_fee, other_fee, total_price, note, items_json) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [newCalcId, titleName, subtotal, ship, tax, other, grandTotal, note.trim(), itemsJson]
         );
       }
       setFormVisible(false);

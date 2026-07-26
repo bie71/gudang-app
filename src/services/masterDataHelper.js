@@ -1,4 +1,4 @@
-import { exec } from "./database";
+import { exec, generateUniqueNumericId } from "./database";
 
 // Pastikan Pemesan tersimpan ke master_orderers jika belum ada
 export async function ensureMasterOrdererExists(name) {
@@ -8,9 +8,10 @@ export async function ensureMasterOrdererExists(name) {
     const res = await exec("SELECT id FROM master_orderers WHERE LOWER(name) = LOWER(?)", [trimmed]);
     if (res.rows.length === 0) {
       const nowIso = new Date().toISOString();
+      const newId = generateUniqueNumericId();
       await exec(
-        "INSERT INTO master_orderers (name, created_at, updated_at) VALUES (?, ?, ?)",
-        [trimmed, nowIso, nowIso]
+        "INSERT INTO master_orderers (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        [newId, trimmed, nowIso, nowIso]
       );
     }
   } catch (e) {
@@ -26,9 +27,10 @@ export async function ensureMasterPoItemExists(name, price = 0, costPrice = 0) {
     const res = await exec("SELECT id FROM master_po_items WHERE LOWER(name) = LOWER(?)", [trimmed]);
     if (res.rows.length === 0) {
       const nowIso = new Date().toISOString();
+      const newId = generateUniqueNumericId();
       await exec(
-        "INSERT INTO master_po_items (name, default_price, default_cost_price, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        [trimmed, price || 0, costPrice || 0, nowIso, nowIso]
+        "INSERT INTO master_po_items (id, name, default_price, default_cost_price, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [newId, trimmed, price || 0, costPrice || 0, nowIso, nowIso]
       );
     }
   } catch (e) {
@@ -44,9 +46,10 @@ export async function ensureMasterMarketerExists(name, defaultFee = 0) {
     const res = await exec("SELECT id FROM master_marketers WHERE LOWER(name) = LOWER(?)", [trimmed]);
     if (res.rows.length === 0) {
       const nowIso = new Date().toISOString();
+      const newId = generateUniqueNumericId();
       await exec(
-        "INSERT INTO master_marketers (name, default_fee, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        [trimmed, defaultFee || 0, nowIso, nowIso]
+        "INSERT INTO master_marketers (id, name, default_fee, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        [newId, trimmed, defaultFee || 0, nowIso, nowIso]
       );
     }
   } catch (e) {

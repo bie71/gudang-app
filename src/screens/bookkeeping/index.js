@@ -28,7 +28,7 @@ import DetailRow from "../../components/DetailRow";
 import FormScrollContainer from "../../components/FormScrollContainer";
 import Input from "../../components/Input";
 import ViewShot from "react-native-view-shot";
-import { exec } from "../../services/database";
+import { exec, generateUniqueNumericId } from "../../services/database";
 import { saveFileToStorage, resolveShareableUri } from "../../services/files";
 import { exportBookkeepingCsv } from "../../services/export";
 import {
@@ -1185,18 +1185,17 @@ export function AddBookkeepingScreen({ route, navigation }) {
           );
         }
       } else {
-        const insertRes = await exec(
-          `INSERT INTO bookkeeping_entries (name, amount, entry_date, note) VALUES (?,?,?,?)`,
-          [trimmedName, parsedAmount, entryDate, trimmedNote],
+        const newId = generateUniqueNumericId();
+        await exec(
+          `INSERT INTO bookkeeping_entries (id, name, amount, entry_date, note) VALUES (?,?,?,?,?)`,
+          [newId, trimmedName, parsedAmount, entryDate, trimmedNote],
         );
-        const newId = insertRes.insertId;
-        if (newId) {
-          await exec(
-            `INSERT INTO bookkeeping_entry_history (entry_id, change_amount, type, note, previous_amount, new_amount)` +
-              ` VALUES (?,?,?,?,?,?)`,
-            [newId, parsedAmount, "CREATE", trimmedNote, 0, parsedAmount],
-          );
-        }
+        const historyId = generateUniqueNumericId();
+        await exec(
+          `INSERT INTO bookkeeping_entry_history (id, entry_id, change_amount, type, note, previous_amount, new_amount)` +
+            ` VALUES (?,?,?,?,?,?,?)`,
+          [historyId, newId, parsedAmount, "CREATE", trimmedNote, 0, parsedAmount],
+        );
       }
       emitBookkeepingRefreshEvent(navigation);
       navigation.goBack();

@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { exec } from "../services/database";
+import { exec, generateUniqueNumericId } from "../services/database";
 import { formatCurrencyValue } from "../utils/format";
 
 export default function MasterDataScreen({ navigation }) {
@@ -155,9 +155,10 @@ export default function MasterDataScreen({ navigation }) {
             [ordererName.trim(), ordererPhone.trim(), ordererAddress.trim(), ordererNote.trim(), nowIso, editingItem.id],
           );
         } else {
+          const newId = generateUniqueNumericId();
           await exec(
-            `INSERT INTO master_orderers (name, phone, address, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-            [ordererName.trim(), ordererPhone.trim(), ordererAddress.trim(), ordererNote.trim(), nowIso, nowIso],
+            `INSERT INTO master_orderers (id, name, phone, address, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [newId, ordererName.trim(), ordererPhone.trim(), ordererAddress.trim(), ordererNote.trim(), nowIso, nowIso],
           );
         }
       } else if (activeTab === "po_items") {
@@ -173,9 +174,10 @@ export default function MasterDataScreen({ navigation }) {
             [itemName.trim(), itemCategory.trim(), price, costPrice, itemNote.trim(), nowIso, editingItem.id],
           );
         } else {
+          const newId = generateUniqueNumericId();
           await exec(
-            `INSERT INTO master_po_items (name, category, default_price, default_cost_price, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [itemName.trim(), itemCategory.trim(), price, costPrice, itemNote.trim(), nowIso, nowIso],
+            `INSERT INTO master_po_items (id, name, category, default_price, default_cost_price, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [newId, itemName.trim(), itemCategory.trim(), price, costPrice, itemNote.trim(), nowIso, nowIso],
           );
         }
       } else {
@@ -190,9 +192,10 @@ export default function MasterDataScreen({ navigation }) {
             [marketerName.trim(), marketerPhone.trim(), marketerAddress.trim(), fee, marketerNote.trim(), nowIso, editingItem.id],
           );
         } else {
+          const newId = generateUniqueNumericId();
           await exec(
-            `INSERT INTO master_marketers (name, phone, address, default_fee, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [marketerName.trim(), marketerPhone.trim(), marketerAddress.trim(), fee, marketerNote.trim(), nowIso, nowIso],
+            `INSERT INTO master_marketers (id, name, phone, address, default_fee, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [newId, marketerName.trim(), marketerPhone.trim(), marketerAddress.trim(), fee, marketerNote.trim(), nowIso, nowIso],
           );
         }
       }

@@ -202,7 +202,7 @@ async function getLocalTablesData() {
   return localData;
 }
 
-// Algoritma 2-Way Merge (Last-Write-Wins per-row)
+// Algoritma 2-Way Merge (Last-Write-Wins per-row dengan Deduplikasi Nama untuk Master Data)
 function mergeTables(localData, remoteData) {
   const mergedTables = {};
 
@@ -213,29 +213,43 @@ function mergeTables(localData, remoteData) {
     if (!cols) continue;
 
     const map = new Map();
+    const isMasterTable = ["master_orderers", "master_po_items", "master_marketers"].includes(table);
+    const nameToIdMap = new Map();
 
     // Tambahkan baris lokal ke map
     for (const row of localRows) {
       if (row && row.id !== undefined && row.id !== null) {
-        map.set(String(row.id), { ...row });
+        const idKey = String(row.id);
+        map.set(idKey, { ...row });
+        if (isMasterTable && row.name) {
+          nameToIdMap.set(String(row.name).toLowerCase().trim(), idKey);
+        }
       }
     }
 
     // Gabungkan dengan baris remote
     for (const remoteRow of remoteRows) {
       if (!remoteRow || remoteRow.id === undefined || remoteRow.id === null) continue;
-      const key = String(remoteRow.id);
+      
+      let key = String(remoteRow.id);
+      if (isMasterTable && remoteRow.name) {
+        const normName = String(remoteRow.name).toLowerCase().trim();
+        if (nameToIdMap.has(normName)) {
+          key = nameToIdMap.get(normName);
+        }
+      }
+
       const existing = map.get(key);
 
       if (!existing) {
         map.set(key, { ...remoteRow });
       } else {
-        // Bandingkan updated_at
-        const localTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-        const remoteTime = remoteRow.updated_at ? new Date(remoteRow.updated_at).getTime() : 0;
+        // Bandingkan updated_at / created_at
+        const localTime = existing.updated_at ? new Date(existing.updated_at).getTime() : (existing.created_at ? new Date(existing.created_at).getTime() : 0);
+        const remoteTime = remoteRow.updated_at ? new Date(remoteRow.updated_at).getTime() : (remoteRow.created_at ? new Date(remoteRow.created_at).getTime() : 0);
 
         if (remoteTime > localTime) {
-          map.set(key, { ...remoteRow });
+          map.set(key, { ...remoteRow, id: existing.id });
         }
       }
     }
