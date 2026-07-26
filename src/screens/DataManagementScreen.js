@@ -19,6 +19,7 @@ import {
   uploadBackupToDrive,
 } from "../services/googleDrive";
 import { performGoogleDriveSync } from "../services/googleDriveSync";
+import { purgeOldDeletedData } from "../services/database";
 import * as WebBrowser from "expo-web-browser";
 WebBrowser.maybeCompleteAuthSession();
 
@@ -28,6 +29,7 @@ export default function DataManagementScreen({ navigation }) {
   const [restoring, setRestoring] = useState(false);
   const [driveSyncing, setDriveSyncing] = useState(false);
   const [fullSyncing, setFullSyncing] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [driveToken, setDriveToken] = useState(null);
   const [initialTokenLoading, setInitialTokenLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
@@ -412,6 +414,36 @@ export default function DataManagementScreen({ navigation }) {
     }
   }, [executeRestore, restoring]);
 
+  const handlePurgeOldData = useCallback(async () => {
+    if (purging) return;
+    Alert.alert(
+      "Bersihkan Data Sampah?",
+      "Seluruh data yang telah terhapus lebih dari 30 hari akan dihapus secara permanen dan memori database akan dikompresi (VACUUM). Lanjutkan?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Bersihkan",
+          style: "destructive",
+          onPress: async () => {
+            setPurging(true);
+            try {
+              const res = await purgeOldDeletedData(30);
+              Alert.alert(
+                "Optimasi Berhasil",
+                `Berhasil menghapus ${res.totalDeleted} data sampah lama secara permanen dan merapikan file database.`,
+              );
+            } catch (err) {
+              console.log("PURGE ERROR:", err);
+              Alert.alert("Gagal", "Tidak dapat membersihkan data sampah.");
+            } finally {
+              setPurging(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [purging]);
+
   const Button = ({ icon, label, subtitle, color, loading, onPress, disabled }) => (
     <TouchableOpacity
       onPress={onPress}
@@ -565,6 +597,16 @@ export default function DataManagementScreen({ navigation }) {
           subtitle="Lihat, tambah, ubah, dan hapus baris spreadsheet secara langsung."
           color="#0D9488"
           onPress={() => navigation.navigate("GoogleSheets")}
+        />
+
+        <Button
+          icon="trash-bin-outline"
+          label="Bersihkan Sampah & Optimasi DB"
+          subtitle="Hapus permanen data terhapus > 30 hari dan kompresi (VACUUM) file database."
+          color="#DC2626"
+          onPress={handlePurgeOldData}
+          loading={purging}
+          disabled={fullSyncing || backingUp || restoring || purging}
         />
 
         <View style={{ marginTop: 24, backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#E2E8F0" }}>

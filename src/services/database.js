@@ -235,6 +235,16 @@ export async function ensureDbReady() {
         } catch (e) {
           // ignore if already exists
         }
+        try {
+          await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_${table}_deleted ON ${table}(deleted_at)`);
+        } catch (e) {
+          // ignore index errors
+        }
+        try {
+          await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_${table}_updated ON ${table}(updated_at)`);
+        } catch (e) {
+          // ignore index errors
+        }
       }
       try {
         await db.execAsync("UPDATE purchase_orders SET status = 'PROGRESS' WHERE status = 'PENDING'");
@@ -405,5 +415,54 @@ async function handleDatabaseChangeHook(query, params, result) {
   } else if (trimmed.includes("DELETE FROM CALCULATOR_ENTRIES")) {
     const id = params[0];
     if (id) await syncLocalToGoogleSheets("kalkulator", "delete", { id });
+  }
+}
+
+// Fungsi Pembersihan Data Sampah (Purge Soft-Deleted Data > 30 Hari) & Kompresi Database (VACUUM)
+export async function purgeOldDeletedData(days = 30) {
+  const db = await ensureDbReady();
+  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const syncTables = [
+    "items",
+    "purchase_orders",
+    "purchase_order_items",
+    "bookkeeping_entries",
+    "bookkeeping_entry_history",
+    "stock_history",
+    "calculator_entries",
+    "notifications",
+    "master_orderers",
+    "master_po_items",
+    "master_marketers",
+  ];
+
+  let totalDeleted = 0;
+  await db.execAsync("BEGIN TRANSACTION");
+  try {
+    for (const table of syncTables) {
+      try {
+        const res = await db.runAsync(
+          `DELETE FROM ${table} WHERE deleted_at IS NOT NULL AND deleted_at != '' AND deleted_at < ?`,
+          [cutoffDate]
+        );
+        totalDeleted += res.changes || 0;
+      } catch (e) {
+        console.log(`Purge error on ${table}:`, e);
+      }
+    }
+    await db.execAsync("COMMIT");
+
+    // Kompresi & perapihan file SQLite
+    try {
+      await db.execAsync("VACUUM;");
+    } catch (ve) {
+      console.log("VACUUM Error:", ve);
+    }
+
+    return { success: true, totalDeleted };
+  } catch (error) {
+    await db.execAsync("ROLLBACK");
+    throw error;
   }
 }
