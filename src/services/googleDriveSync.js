@@ -49,18 +49,27 @@ const TABLE_SCHEMAS = {
 // Ambil valid access token
 async function getValidAccessToken() {
   const token = await getStoredDriveToken();
+  console.log("[SYNC LOG] getValidAccessToken stored token:", token ? {
+    hasAccessToken: Boolean(token.accessToken),
+    hasRefreshToken: Boolean(token.refreshToken),
+    expiresAt: token.expiresAt,
+    isValid: isDriveTokenValid(token)
+  } : "NULL");
+
   if (!token || !token.accessToken) return null;
   if (isDriveTokenValid(token)) return token.accessToken;
 
   const clientId = getClientId();
+  console.log("[SYNC LOG] Attempting token refresh with clientId:", clientId);
   if (token.refreshToken && clientId) {
     try {
       const refreshed = await refreshDriveAccessToken({ clientId, refreshToken: token.refreshToken });
+      console.log("[SYNC LOG] Token refresh result:", refreshed ? "SUCCESS" : "FAILED");
       if (refreshed?.accessToken) {
         return refreshed.accessToken;
       }
     } catch (e) {
-      console.log("SYNC TOKEN REFRESH ERROR:", e);
+      console.log("[SYNC LOG] SYNC TOKEN REFRESH ERROR:", e);
       if (e?.isInvalidGrant) {
         await clearDriveToken();
         return null;
@@ -75,29 +84,43 @@ async function getValidAccessToken() {
 // Cari ID file gudang_app_sync.json di Drive
 async function findSyncFileId(accessToken) {
   const q = encodeURIComponent(`name = '${SYNC_FILE_NAME}' and trashed = false`);
+  console.log("[SYNC LOG] findSyncFileId fetching...");
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  console.log("[SYNC LOG] findSyncFileId HTTP Status:", response.status);
   if (response.status === 401) {
-    const err = new Error("401 Unauthorized");
+    const errorJson = await response.json().catch(() => null);
+    console.log("[SYNC LOG] findSyncFileId 401 Error:", errorJson);
+    const err = new Error(`401 Unauthorized: ${JSON.stringify(errorJson)}`);
     err.status = 401;
     throw err;
   }
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    console.log("[SYNC LOG] findSyncFileId non-OK response:", response.status, text);
+    return null;
+  }
   const json = await response.json();
   if (json.files && json.files.length > 0) {
+    console.log("[SYNC LOG] Found remote sync fileId:", json.files[0].id);
     return json.files[0].id;
   }
+  console.log("[SYNC LOG] No existing sync file found on Drive.");
   return null;
 }
 
 // Download isi file sync dari Drive
 async function downloadRemoteSyncData(accessToken, fileId) {
+  console.log("[SYNC LOG] downloadRemoteSyncData fileId:", fileId);
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  console.log("[SYNC LOG] downloadRemoteSyncData HTTP Status:", response.status);
   if (response.status === 401) {
-    const err = new Error("401 Unauthorized");
+    const errorJson = await response.json().catch(() => null);
+    console.log("[SYNC LOG] downloadRemoteSyncData 401 Error:", errorJson);
+    const err = new Error(`401 Unauthorized: ${JSON.stringify(errorJson)}`);
     err.status = 401;
     throw err;
   }
@@ -111,6 +134,7 @@ async function downloadRemoteSyncData(accessToken, fileId) {
 
 // Upload atau update data sync ke Drive
 async function uploadSyncDataToDrive(accessToken, fileId, payload) {
+  console.log("[SYNC LOG] uploadSyncDataToDrive starting, fileId:", fileId);
   const jsonContent = JSON.stringify(payload, null, 2);
   const boundary = `sync_bound_${Math.random().toString(36).slice(2)}`;
   const metadata = { name: SYNC_FILE_NAME, mimeType: "application/json" };
@@ -144,14 +168,20 @@ async function uploadSyncDataToDrive(accessToken, fileId, payload) {
     body,
   });
 
+  console.log("[SYNC LOG] uploadSyncDataToDrive HTTP Status:", response.status);
+
   if (response.status === 401) {
-    const err = new Error("401 Unauthorized");
+    const errorJson = await response.json().catch(() => null);
+    console.log("[SYNC LOG] uploadSyncDataToDrive 401 Error:", errorJson);
+    const err = new Error(`401 Unauthorized: ${JSON.stringify(errorJson)}`);
     err.status = 401;
     throw err;
   }
 
   if (!response.ok) {
-    throw new Error("Gagal mengunggah data sync ke Google Drive.");
+    const text = await response.text().catch(() => "");
+    console.log("[SYNC LOG] uploadSyncDataToDrive error text:", text);
+    throw new Error(`Gagal mengunggah data sync (${response.status}): ${text}`);
   }
   return await response.json();
 }

@@ -355,19 +355,24 @@ export default function DataManagementScreen({ navigation }) {
 
   const handlePerformSync = useCallback(async () => {
     if (fullSyncing) return;
+    const storedBefore = await getStoredDriveToken();
+    console.log("[SYNC UI LOG] handlePerformSync triggered. googleLoggedIn:", googleLoggedIn, "storedToken:", storedBefore ? { hasAccess: Boolean(storedBefore.accessToken), hasRefresh: Boolean(storedBefore.refreshToken) } : "NULL");
     if (!googleLoggedIn) {
       Alert.alert("Login Diperlukan", "Silakan login Google Drive terlebih dahulu sebelum melakukan sinkronisasi.");
       return;
     }
     setFullSyncing(true);
     try {
+      console.log("[SYNC UI LOG] Calling performGoogleDriveSync()...");
       const res = await performGoogleDriveSync();
+      console.log("[SYNC UI LOG] performGoogleDriveSync SUCCESS:", res);
       if (res.success) {
         Alert.alert("Sync Berhasil", `Data berhasil disinkronkan 2-arah pada ${new Date(res.syncedAt).toLocaleString("id-ID")}.`);
       }
     } catch (error) {
-      console.log("2-WAY SYNC ERROR:", error);
-      Alert.alert("Gagal Sync", error?.message || "Tidak dapat melakukan sinkronisasi saat ini.");
+      console.log("[SYNC UI LOG] 2-WAY SYNC ERROR:", error);
+      const errMsg = error?.message || String(error);
+      Alert.alert("Gagal Sync", errMsg);
     } finally {
       const stored = await getStoredDriveToken();
       setDriveToken(stored);
