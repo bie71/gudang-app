@@ -34,6 +34,35 @@ export default function DataManagementScreen({ navigation }) {
   const [initialTokenLoading, setInitialTokenLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
 
+  const googleLoggedIn = useMemo(() => {
+    if (!driveToken) return false;
+    return Boolean(driveToken.accessToken || driveToken.refreshToken);
+  }, [driveToken]);
+
+  const driveBackupDisabled = useMemo(
+    () => !googleLoggedIn || driveSyncing || authLoading || initialTokenLoading,
+    [googleLoggedIn, driveSyncing, authLoading, initialTokenLoading],
+  );
+
+  useEffect(() => {
+    console.log("GOOGLE DRIVE AUTH STATE:", {
+      googleLoggedIn,
+      hasAccessToken: Boolean(driveToken?.accessToken),
+      hasRefreshToken: Boolean(driveToken?.refreshToken),
+      authLoading,
+      initialTokenLoading,
+      driveSyncing,
+      driveBackupDisabled,
+    });
+  }, [
+    googleLoggedIn,
+    driveToken,
+    authLoading,
+    initialTokenLoading,
+    driveSyncing,
+    driveBackupDisabled,
+  ]);
+
   const extraClients = useMemo(() => {
     const expoExtra = Constants?.expoConfig?.extra ?? {};
     const legacyExtra = Constants?.manifest?.extra ?? {};
@@ -358,8 +387,9 @@ export default function DataManagementScreen({ navigation }) {
   const handlePerformSync = useCallback(async () => {
     if (fullSyncing) return;
     const storedBefore = await getStoredDriveToken();
-    console.log("[SYNC UI LOG] handlePerformSync triggered. googleLoggedIn:", googleLoggedIn, "storedToken:", storedBefore ? { hasAccess: Boolean(storedBefore.accessToken), hasRefresh: Boolean(storedBefore.refreshToken) } : "NULL");
-    if (!googleLoggedIn) {
+    const isLogged = Boolean(googleLoggedIn || storedBefore?.accessToken || storedBefore?.refreshToken);
+    console.log("[SYNC UI LOG] handlePerformSync triggered. googleLoggedIn:", googleLoggedIn, "isLogged:", isLogged, "storedToken:", storedBefore ? { hasAccess: Boolean(storedBefore.accessToken), hasRefresh: Boolean(storedBefore.refreshToken) } : "NULL");
+    if (!isLogged) {
       Alert.alert("Login Diperlukan", "Silakan login Google Drive terlebih dahulu sebelum melakukan sinkronisasi.");
       return;
     }
@@ -484,34 +514,6 @@ export default function DataManagementScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  const googleLoggedIn = useMemo(() => {
-    if (!driveToken) return false;
-    return Boolean(driveToken.accessToken || driveToken.refreshToken);
-  }, [driveToken]);
-
-  const driveBackupDisabled = useMemo(
-    () => !googleLoggedIn || driveSyncing || authLoading || initialTokenLoading,
-    [googleLoggedIn, driveSyncing, authLoading, initialTokenLoading],
-  );
-
-  useEffect(() => {
-    console.log("GOOGLE DRIVE AUTH STATE:", {
-      googleLoggedIn,
-      hasAccessToken: Boolean(driveToken?.accessToken),
-      hasRefreshToken: Boolean(driveToken?.refreshToken),
-      authLoading,
-      initialTokenLoading,
-      driveSyncing,
-      driveBackupDisabled,
-    });
-  }, [
-    googleLoggedIn,
-    driveToken,
-    authLoading,
-    initialTokenLoading,
-    driveSyncing,
-    driveBackupDisabled,
-  ]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC", marginTop: -50}}>
