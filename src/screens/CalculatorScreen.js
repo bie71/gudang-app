@@ -465,7 +465,7 @@ export function CalculatorScreen() {
           {/* Edit */}
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => openEditForm(item)}
+            onPress={() => openEditModal(item)}
             style={{
               width: 44,
               borderRadius: 10,
