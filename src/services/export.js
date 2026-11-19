@@ -5,6 +5,8 @@ import { exec } from "./database";
 import { saveFileToStorage, resolveShareableUri } from "./files";
 import { serializeToCsv, buildTimestampedFileBase } from "../utils/csv";
 
+export { saveFileToStorage, resolveShareableUri };
+
 async function fetchRows(sql, params = [], mapRow) {
   const res = await exec(sql, params);
   const rows = [];
@@ -46,6 +48,7 @@ export async function exportItemsCsv() {
     `
       SELECT id, name, category, price, cost_price, stock, size
       FROM items
+      WHERE (deleted_at IS NULL OR deleted_at = '')
       ORDER BY id ASC
     `,
   );
@@ -87,7 +90,8 @@ export async function exportPurchaseOrdersCsv() {
           WHERE it.order_id = po.id
         ) as order_total
       FROM purchase_orders po
-      LEFT JOIN purchase_order_items items ON items.order_id = po.id
+      LEFT JOIN purchase_order_items items ON items.order_id = po.id AND (items.deleted_at IS NULL OR items.deleted_at = '')
+      WHERE (po.deleted_at IS NULL OR po.deleted_at = '')
       ORDER BY po.id ASC, items.id ASC
     `,
   );
@@ -131,7 +135,8 @@ export async function exportBookkeepingCsv() {
         IFNULL(h.new_amount, 0) as new_amount,
         h.created_at as change_created_at
       FROM bookkeeping_entries e
-      LEFT JOIN bookkeeping_entry_history h ON h.entry_id = e.id
+      LEFT JOIN bookkeeping_entry_history h ON h.entry_id = e.id AND (h.deleted_at IS NULL OR h.deleted_at = '')
+      WHERE (e.deleted_at IS NULL OR e.deleted_at = '')
       ORDER BY e.id ASC, h.id ASC
     `,
   );
@@ -170,7 +175,8 @@ export async function exportStockHistoryCsv() {
         IFNULL(h.unit_cost, 0) as unit_cost,
         IFNULL(h.profit_amount, 0) as profit_amount
       FROM stock_history h
-      LEFT JOIN items i ON i.id = h.item_id
+      LEFT JOIN items i ON i.id = h.item_id AND (i.deleted_at IS NULL OR i.deleted_at = '')
+      WHERE (h.deleted_at IS NULL OR h.deleted_at = '')
       ORDER BY h.id ASC
     `,
   );

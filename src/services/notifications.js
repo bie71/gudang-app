@@ -59,7 +59,7 @@ export async function checkAndGenerateAlerts() {
   try {
     // 1. Cek Purchase Orders (PO) Jatuh Tempo (H-1 sebelum Close atau Ready)
     const poRes = await exec(
-      "SELECT id, supplier_name, item_name, quantity, price, close_po_date, estimated_ready_date FROM purchase_orders WHERE status = 'PROGRESS'"
+      "SELECT id, supplier_name, item_name, quantity, price, close_po_date, estimated_ready_date FROM purchase_orders WHERE status = 'PROGRESS' AND (deleted_at IS NULL OR deleted_at = '')"
     );
     const activePOs = poRes.rows._array || [];
 
@@ -111,7 +111,7 @@ export async function checkAndGenerateAlerts() {
     }
 
     // 2. Cek Stok Barang Habis (Hanya stok = 0)
-    const itemsRes = await exec("SELECT id, name, category, price, stock FROM items WHERE stock = 0");
+    const itemsRes = await exec("SELECT id, name, category, price, stock FROM items WHERE stock = 0 AND (deleted_at IS NULL OR deleted_at = '')");
     const outOfStockItems = itemsRes.rows._array || [];
 
     for (const item of outOfStockItems) {
@@ -138,8 +138,8 @@ export async function checkAndGenerateAlerts() {
     const existsRes = await exec("SELECT COUNT(*) as count FROM notifications WHERE message LIKE ?", [`%${summarySignature}%`]);
     if (existsRes.rows.item(0).count === 0) {
       // Ambil ringkasan kas bulan lalu
-      const incomeRes = await exec("SELECT IFNULL(SUM(amount), 0) as total FROM bookkeeping_entries WHERE amount > 0 AND entry_date LIKE ?", [`${prevMonthStr}%`]);
-      const expenseRes = await exec("SELECT IFNULL(SUM(amount), 0) as total FROM bookkeeping_entries WHERE amount < 0 AND entry_date LIKE ?", [`${prevMonthStr}%`]);
+      const incomeRes = await exec("SELECT IFNULL(SUM(amount), 0) as total FROM bookkeeping_entries WHERE amount > 0 AND (deleted_at IS NULL OR deleted_at = '') AND entry_date LIKE ?", [`${prevMonthStr}%`]);
+      const expenseRes = await exec("SELECT IFNULL(SUM(amount), 0) as total FROM bookkeeping_entries WHERE amount < 0 AND (deleted_at IS NULL OR deleted_at = '') AND entry_date LIKE ?", [`${prevMonthStr}%`]);
       
       const totalIncome = incomeRes.rows.item(0).total || 0;
       const totalExpense = Math.abs(expenseRes.rows.item(0).total || 0);

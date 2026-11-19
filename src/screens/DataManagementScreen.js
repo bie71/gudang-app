@@ -108,7 +108,7 @@ export default function DataManagementScreen({ navigation }) {
     // iosClientId: googleConfig.iosClientId,
     // expoClientId: googleConfig.expoClientId,
     // webClientId: googleConfig.webClientId,
-    scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/spreadsheets"],
+    scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.file"],
     redirectUri,
     shouldAutoExchangeCode: false,
     extraParams: {
@@ -591,14 +591,6 @@ export default function DataManagementScreen({ navigation }) {
           onPress={handleDriveBackup}
           loading={driveSyncing}
           disabled={driveBackupDisabled || fullSyncing}
-        />
-
-        <Button
-          icon="grid-outline"
-          label="Google Sheets"
-          subtitle="Lihat, tambah, ubah, dan hapus baris spreadsheet secara langsung."
-          color="#0D9488"
-          onPress={() => navigation.navigate("GoogleSheets")}
         />
 
         <Button

@@ -56,7 +56,9 @@ export default function HistoryScreen({ navigation }) {
         `
           SELECT h.id, h.type, h.qty, h.note, h.created_at, i.name
           FROM stock_history h JOIN items i ON i.id = h.item_id
-          WHERE (? = '' OR LOWER(i.name) LIKE ? OR LOWER(IFNULL(h.note,'')) LIKE ? OR LOWER(h.type) LIKE ?)
+          WHERE (h.deleted_at IS NULL OR h.deleted_at = '')
+            AND (i.deleted_at IS NULL OR i.deleted_at = '')
+            AND (? = '' OR LOWER(i.name) LIKE ? OR LOWER(IFNULL(h.note,'')) LIKE ? OR LOWER(h.type) LIKE ?)
           ORDER BY h.id DESC
           LIMIT ? OFFSET ?
         `,
@@ -203,6 +205,9 @@ export default function HistoryScreen({ navigation }) {
           onRefresh={handleRefresh}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           ListFooterComponent={
             loadingMore ? (

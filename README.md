@@ -1,301 +1,134 @@
-# Gudang App (React Native + Expo + SQLite)
+# Gudang App (React Native + Expo + SQLite) - v1.8.0
 
-Aplikasi gudang **offline-first** untuk input barang, stok masuk/keluar, riwayat transaksi, dan dashboard metrik.
-
-## ✨ Fitur
-- **Manajemen Inventori & Stok Visual (Gudang):** CRUD barang (nama, kategori, ukuran, harga modal, harga jual, stok) & stok masuk (IN) / keluar (OUT) + riwayat mutasi stok.
-- **Bilah Progres Level Stok & Status Badge:** Tampilan visual dinamis tingkat keamanan stok (Habis, Kritis, Menipis, Aman) dengan bar warna-warni (Merah, Amber, Kuning, Hijau) pada daftar Gudang dan Dashboard utama.
-- **Menu Pintas Floating Action Button (FAB):** Akses cepat ke aksi utama (Tambah Barang, Buat PO, Catat Kas, Laporan) dengan overlay backdrop gelap beranimasi elegan di Dashboard.
-- **Asisten Bisnis Pintar (AI Consultant):** Penghitungan otomatis persentase Margin Profit Bersih dari omzet penjualan riil (barang keluar + PO selesai) secara offline, lengkap dengan rekomendasi strategi dan tips bisnis taktis.
-- **Purchase Order (PO) & Analitik Terintegrasi:** Pemesanan barang ke supplier, detail pemesan, item barang belanjaan, estimasi tanggal Close PO & tanggal barang Ready, pelacakan status PO (Progress/Done/Cancelled), visual rasio status PO, spend leaders supplier, serta jadwal ready PO yang dapat diklik langsung ke detail PO.
-- **Manajemen Marketer & Fee PO (v1.7.0):** Pencatatan nama marketer dan fee marketer pada Purchase Order (PO), pemeringkatan Marketer Terbanyak (Rank Marketer), pembatasan tampilan item (maksimal 3 item + `, ...`), tombol *'Lihat Semua Marketer'*, serta Modal Detail Marketer interaktif yang menampilkan rincian PO dan fee per PO.
-- **Sistem Notifikasi Kas Disesuaikan (v1.7.0):** Pembersihan pengingat notifikasi kas harian untuk berfokus pada laporan rekapitulasi bulanan.
-- **Pembukuan (Keuangan/Kas):** Pencatatan pemasukan dan pengeluaran kas toko secara terperinci (general ledger) beserta log perubahan data.
-- **Kalkulator Biaya:** Penghitungan harga pokok penjualan (HPP) mencakup ongkir, pajak, dan biaya lainnya secara dinamis.
-- **Integrasi Google Sheets Async (Two-Way Sync):**
-  - Pembuatan otomatis spreadsheet di Google Drive pengguna dengan 4 tab terpisah (`Barang`, `PO`, `Keuangan`, `Kalkulator`), lengkap dengan kolom `Ukuran`.
-  - Sinkronisasi otomatis di latar belakang (background async) setiap kali pengguna melakukan aktivitas CRUD lokal.
-  - Sinkronisasi dua arah (Two-Way Sync) per modul maupun global untuk menyamakan data lokal dengan cloud.
-  - Deteksi tab dinamis dengan gesture tarik ke bawah (**Pull-to-Refresh**) di layar Google Sheets CRUD.
-- **Laporan PDF & CSV Pintar:** Ekspor data barang dan riwayat mutasi stok lengkap dengan kolom baru (`Ukuran`), serta pencetakan PDF ringkasan riwayat barang dengan kombinasi badge Kategori & Ukuran.
-- **Sistem Notifikasi & Alert Pintar (Lonceng):**
-  * **Badge Riwayat Aktif:** Badge lingkaran merah real-time dengan jumlah angka pemberitahuan belum dibaca di Dashboard.
-  * **Peringatan Stok Habis:** Otomatis mengingatkan jika stok barang bernilai `0` pcs agar segera melakukan pemesanan ulang (PO).
-  * **Peringatan PO Jatuh Tempo (H-1):** Alert otomatis H-1 sebelum tanggal Close PO atau sebelum barang diestimasikan Ready.
-  * **Pengingat Harian Kas (Daily Reminder):** Mengingatkan pengguna setiap malam jika belum mencatat transaksi kas hari ini.
-  * **Laporan Ringkasan Bulanan Keuangan:** Rekapitulasi bulanan otomatis yang menghitung total pemasukan, pengeluaran, dan surplus/defisit kas bulan lalu.
-  * **Pop-Up Detail & Baca Semua:** Kemudahan membaca detail lengkap via pop-up alert dialog dan opsi menandai semua notifikasi terbaca.
-- **Form Keamanan Keyboard (FormScrollContainer):** Form dinamis dengan safe auto-scroll on focus agar kolom input terbawah (Stok, Harga, Catatan) tidak terhalang keyboard.
-- **Splash Screen Premium & Loader:** Splash screen gelap dengan transisi logo membesar, indikator loading, dan byline custom **`BY BIE7`** (durasi 1.5 detik).
-
-## 🧰 Requirement
-- **Node.js** LTS (18+/20+)
-- **npm/pnpm/yarn**
-- **Expo** (gunakan `npx expo` / Expo Go app)
-- **Android Studio** (Emulator) atau HP Android dengan **Expo Go**
-- (Opsional iOS) macOS + Xcode
-
-> SQLite berjalan native di Android/iOS. Mode Web tidak direkomendasikan.
-
-## 🚀 Setup & Instalasi
-```bash
-npm install
-npx expo start
-# tekan "a" untuk emulator Android atau scan QR di Expo Go
-```
-
-### Menjalankan langsung ke emulator/device
-```bash
-npx expo run:android
-# atau
-npx expo run:ios   # (butuh macOS + Xcode)
-```
-
-## 🗃️ Skema Database
-Tabel yang digunakan oleh aplikasi (dibuat otomatis saat boot):
-```sql
--- Kategori & Barang
-CREATE TABLE IF NOT EXISTS items(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  category TEXT,
-  price INTEGER NOT NULL DEFAULT 0,      -- Harga Jual
-  cost_price INTEGER NOT NULL DEFAULT 0, -- Harga Modal (HPP)
-  stock INTEGER NOT NULL DEFAULT 0,
-  size TEXT                              -- Ukuran (XS, S, M, L, XL, XXL atau Manual)
-);
-
--- Riwayat Pergerakan Stok
-CREATE TABLE IF NOT EXISTS stock_history(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER NOT NULL,
-  type TEXT NOT NULL,                    -- 'IN' | 'OUT'
-  qty INTEGER NOT NULL,
-  unit_price INTEGER,
-  unit_cost INTEGER,
-  profit_amount INTEGER NOT NULL DEFAULT 0,
-  note TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  FOREIGN KEY(item_id) REFERENCES items(id)
-);
-
--- Purchase Orders (PO)
-CREATE TABLE IF NOT EXISTS purchase_orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  supplier_name TEXT,
-  orderer_name TEXT,
-  item_name TEXT NOT NULL,
-  quantity INTEGER NOT NULL DEFAULT 0,
-  price INTEGER NOT NULL DEFAULT 0,
-  order_date TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'PROGRESS', -- 'PROGRESS' | 'DONE' | 'CANCELLED'
-  note TEXT,
-  close_po_date TEXT,                      -- Tanggal Close PO (Format YYYY-MM-DD)
-  estimated_ready_date TEXT,               -- Estimasi Ready Barang (Format YYYY-MM-DD)
-  completed_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
--- Detail Item di dalam PO
-CREATE TABLE IF NOT EXISTS purchase_order_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  order_id INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  quantity INTEGER NOT NULL DEFAULT 0,
-  price INTEGER NOT NULL DEFAULT 0,
-  cost_price INTEGER NOT NULL DEFAULT 0,
-  FOREIGN KEY(order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
-);
-
--- Kas / Buku Keuangan
-CREATE TABLE IF NOT EXISTS bookkeeping_entries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  amount INTEGER NOT NULL DEFAULT 0,       -- Positif (Pemasukan), Negatif (Pengeluaran)
-  entry_date TEXT NOT NULL,
-  note TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
--- Kalkulator HPP & Biaya
-CREATE TABLE IF NOT EXISTS calculator_entries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_name TEXT NOT NULL,
-  base_price INTEGER NOT NULL DEFAULT 0,
-  shipping_fee INTEGER NOT NULL DEFAULT 0,
-  tax_fee INTEGER NOT NULL DEFAULT 0,
-  other_fee INTEGER NOT NULL DEFAULT 0,
-  total_price INTEGER NOT NULL DEFAULT 0,
-  items_json TEXT,
-  note TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
--- Sistem Notifikasi & Peringatan
-CREATE TABLE IF NOT EXISTS notifications (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  category TEXT NOT NULL,                  -- 'barang' | 'po' | 'keuangan' | 'system'
-  is_read INTEGER NOT NULL DEFAULT 0,      -- 0 (Belum Dibaca), 1 (Sudah Dibaca)
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-```
-
-**Aturan singkat**
-- Tambah barang → opsional stok awal
-- IN: insert history + `items.stock += qty`
-- OUT: validasi stok, insert history + `items.stock -= qty`
-- Omzet = Σ(OUT.qty × item.price)
-
-```
-## 📱 Panduan Menjalankan & Membangun Aplikasi (Run & Build Guide)
-
-Berikut adalah panduan lengkap cara menjalankan aplikasi di emulator, debugging via ADB, serta langkah-langkah membangun (build) aplikasi untuk Android & iOS menggunakan Expo CLI dan EAS (Expo Application Services).
+Aplikasi manajemen pergudangan, stok barang, purchase order, dan pembukuan kas toko berbasis **offline-first** dengan arsitektur **Clean Code**, **Micro UI**, **Real-Time Cross-Screen Reactivity**, serta integrasi pencadangan awan **Google Drive (Two-Way Sync)**.
 
 ---
 
-### 1. Menjalankan Aplikasi di Emulator (Run on Emulator)
+## ✨ Fitur Unggulan
 
-#### Emulator Android (Android Studio / AVD)
-1. **Buka Android Studio**, pilih **Device Manager** (AVD Manager), dan jalankan salah satu emulator Android pilihan Anda.
-2. Pastikan emulator sudah menyala penuh dan terdeteksi.
-3. Jalankan perintah di bawah ini pada terminal proyek Anda:
+### 1. 🏗️ Arsitektur Clean Code & Micro UI (v1.8.0)
+- **Separation of Concerns (SoC):** Pemisahan tegas antara logika bisnis (Business Logic), akses data (Repository Pattern), status/state management (Custom Hooks), dan presentasi visual (Micro UI Components).
+- **Micro UI Toolkit (`src/components/ui`):** Kumpulan komponen atomik yang konsisten, reusable, dan modular (`Card`, `Badge`, `SearchBar`, `EmptyState`, `FilterChip`, `ConfirmModal`, `SectionHeader`, `Header`).
+- **Data Access Layer (`src/repositories`):** Seluruh query SQLite diisolasi ke dalam repository (`itemRepository`, `purchaseOrderRepository`, `bookkeepingRepository`, `dashboardRepository`, `masterDataRepository`, `analyticsRepository`, `calculatorRepository`).
+- **Reactive Hooks Layer (`src/hooks`):** Pengelolaan state dan efek samping terpusat (`useItems`, `useItemDetail`, `usePurchaseOrders`, `usePurchaseOrderDetail`, `useBookkeeping`, `useDashboard`, `useMasterData`).
+
+### 2. ⚡ Reaktivitas Instan Seluruh Modul (Real-Time Event Bus)
+- **Centralized Event Bus (`src/services/events.js`):** Mekanisme pub/sub in-memory ringan yang memancarkan event perubahan data (`PO_CHANGED`, `ITEMS_CHANGED`, `BOOKKEEPING_CHANGED`).
+- **Focus Reactivity (`useFocusEffect`):** Setiap kali kembali ke layar detail, daftar, atau dashboard setelah melakukan edit/tambah data, tampilan langsung ter-update secara otomatis tanpa reload kasar dan tanpa harus kembali ke list terlebih dahulu.
+- **Optimistic UI Updates:** Respon antarmuka instan (0 milidetik) saat mengubah status, membatalkan pesanan, atau menghapus item, dengan proteksi rollback otomatis jika terjadi kesalahan.
+
+### 3. 📦 Purchase Order (PO) & Invoice Pintar
+- **Pelacakan Status Lengkap:** Pemantauan status PO secara visual (`PROGRESS`, `DONE`, `CANCELLED`).
+- **Fitur Batalkan PO (Cancel PO):** Tombol pembatalan langsung pada daftar kartu PO maupun layar detail PO lengkap dengan dialog konfirmasi.
+- **Smart Autocomplete (Suggestion Chips):**
+  - **Nama Pemesan / Pembeli:** Rekomendasi otomatis dari master data pelanggan.
+  - **Nama Supplier / Pemasok:** Rekomendasi otomatis dari riwayat pemasok unik yang pernah dicatat.
+  - **Nama Marketer & Komisi:** Rekomendasi marketer otomatis yang sekaligus mengisi tarif komisi standar (`default_fee`).
+  - **Nama Barang PO:** Rekomendasi nama barang yang otomatis mengisi harga jual dan harga modal, serta menghitung proyeksi profit per baris barang.
+- **Akumulasi Profit Bersih & Estimasi Proyeksi:**
+  - **Akumulasi Profit Bersih (Selesai):** Keuntungan riil dari pesanan berstatus `DONE` setelah dipotong biaya modal dan fee marketer.
+  - **Estimasi Profit Berjalan (Progress):** Potensi laba dari pesanan yang sedang diproses.
+  - **Total Belanja & Total Kuantitas Pesanan.**
+- **Ekspor Dokumen Invoice Resmi:**
+  - **Export PDF:** Pembuatan struk faktur/invoice PO profesional format PDF via `expo-print` dan berbagi via `expo-sharing`.
+  - **Export Gambar PNG:** Pengambilan tangkapan gambar faktur beresolusi tinggi via `react-native-view-shot` untuk dibagikan ke WhatsApp atau media sosial.
+
+### 4. 📊 Dashboard Manajemen & Quick Menu Pintas
+- **Header Bersih & Proporsional:** Tata letak minimalis dengan 2 aksi esensial (Lonceng Notifikasi & Ikon Pengaturan Data/Backup).
+- **Pintasan Menu Operasional (`DashboardQuickMenu`):**
+  - ☁️ **Backup & Sync:** Akses cepat ke pencadangan Google Drive dan pemeliharaan database.
+  - 👥 **Master Data:** Pengaturan daftar pemesan, marketer, dan item barang PO.
+  - ⏱️ **Riwayat Stok:** Log audit pergerakan keluar-masuk barang.
+  - 📊 **Laporan Bisnis:** Analitik margin laba riil dan konsultasi strategi bisnis.
+- **Metrik Utama Real-Time:** Total stok fisik, valuasi inventaris toko, status PO berjalan, saldo kas toko, dan banner akumulasi laba bersih PO.
+
+### 5. ☁️ Google Drive Backup & Two-Way Sync
+- **Pencadangan Penuh ke Cloud:** Otentikasi OAuth2 resmi Google Drive untuk mengunggah dan memulihkan cadangan database JSON secara aman.
+- **Sinkronisasi 2-Arah:** Kemampuan sinkronisasi antar perangkat menggunakan akun Google Drive yang sama.
+- **Optimasi Database (VACUUM):** Fitur pembersihan soft-deleted data lama (>30 hari) dan kompresi database lokal.
+
+### 6. 🗃️ Manajemen Inventori, Stok & Pembukuan Kas
+- **Inventori & Stok Visual:** CRUD barang, level stok visual dinamis (Aman, Menipis, Kritis, Habis), dan pencatatan stok masuk (IN) / keluar (OUT).
+- **Pembukuan Keuangan Toko:** Buku kas masuk/keluar harian beserta riwayat akun dan saldo kumulatif.
+- **Kalkulator Biaya (HPP):** Simulasi harga pokok penjualan dengan perhitungan ongkir dan margin keuntungan.
+- **Asisten AI Consultant:** Analisis rasio margin laba bersih offline dari penjualan riil.
+- **Sistem Notifikasi Pintar:** Peringatan H-1 PO jatuh tempo / barang ready, peringatan stok habis (`0 pcs`), dan rekapitulasi keuangan bulanan.
+
+---
+
+## 🧰 Kebutuhan Lingkungan (Prerequisites)
+- **Node.js** LTS (v18+ atau v20+)
+- **npm** atau **yarn**
+- **Expo CLI** (`npx expo`)
+- **Android Studio** (Emulator) atau Perangkat Android fisik dengan **Expo Go** / Development Build
+
+---
+
+## 🚀 Setup & Menjalankan Aplikasi
+
+1. **Install Dependensi:**
+   ```bash
+   npm install
+   ```
+
+2. **Jalankan Development Server:**
    ```bash
    npx expo start
    ```
-4. Setelah Metro Bundler berjalan, tekan tombol **`a`** pada terminal untuk menginstalkan aplikasi dan membukanya di emulator Android secara otomatis.
-   * *Alternatif (Langsung compile Native Build)*:
-     ```bash
-     npx expo run:android
-     ```
+   *Tekan `a` pada terminal untuk membuka di Android Emulator, atau pindai kode QR menggunakan aplikasi Expo Go di HP.*
 
-#### Simulator iOS (Hanya macOS + Xcode)
-1. Buka **Xcode** > **Open Developer Tool** > **Simulator**.
-2. Jalankan Metro Bundler:
+3. **Verifikasi Kompilasi (Export Bundling):**
    ```bash
-   npx expo start
-   ```
-3. Tekan tombol **`i`** pada terminal untuk membuka aplikasi di simulator iOS.
-   * *Alternatif (Langsung compile Native Build)*:
-     ```bash
-     npx expo run:ios
-     ```
-
----
-
-### 2. Debugging & Menjalankan via ADB (Android Debug Bridge)
-
-Jika Anda ingin menjalankan aplikasi langsung ke HP/Device Android fisik atau mendeteksi emulator yang bermasalah menggunakan kabel USB:
-
-#### Persiapan Device Fisik:
-1. Aktifkan **Developer Options** di Android Anda (Klik *Build Number* sebanyak 7 kali di Pengaturan Sistem).
-2. Nyalakan **USB Debugging** di menu Developer Options.
-3. Hubungkan HP ke laptop/komputer Anda dengan kabel USB yang mendukung transfer data.
-
-#### Perintah ADB Penting:
-* **Mengecek perangkat yang terhubung**:
-  ```bash
-  adb devices
-  ```
-  *Pastikan perangkat Anda muncul dengan status `device`. Jika tertulis `unauthorized`, konfirmasi izin debugging pada layar HP Anda.*
-* **Port Forwarding (Menghubungkan Metro Bundler ke HP Fisik)**:
-  Jika HP terhubung via USB tetapi tidak bisa tersambung ke server Metro Bundler, jalankan:
-  ```bash
-  adb reverse tcp:8081 tcp:8081
-  ```
-* **Memasang file APK yang sudah dibuild secara lokal**:
-  ```bash
-  adb install -r path/to/your-app.apk
-  ```
-* **Melihat log system (debugging)**:
-  ```bash
-  adb logcat *:S ReactNative:V ReactNativeJS:V
-  ```
-
----
-
-### 3. Cara Membangun Aplikasi (Build untuk Android & iOS)
-
-Terdapat dua metode untuk melakukan build: **EAS Build (Cloud)** dan **Local Build**.
-
-#### A. Menggunakan EAS (Expo Application Services) - Rekomendasi 🌟
-EAS Build melakukan proses kompilasi di server cloud Expo, sehingga Anda tidak membutuhkan laptop berspesifikasi tinggi (dan tidak butuh macOS untuk membuild iOS).
-
-##### Persiapan:
-1. Pastikan Anda sudah login ke akun Expo. Jika belum, jalankan:
-   ```bash
-   npx eas login
-   ```
-2. Inisialisasi konfigurasi EAS di proyek Anda (jika belum ada):
-   ```bash
-   npx eas build:configure
-   ```
-
-##### Membangun untuk Android:
-* **Build APK (Development / Testing)**:
-  Berguna untuk diinstal langsung ke perangkat testing (membuat file APK yang bisa dibagikan).
-  ```bash
-  npx eas build -p android --profile development
-  ```
-* **Build AAB (Production)**:
-  Format `.aab` untuk diupload ke Google Play Store.
-  ```bash
-  npx eas build -p android --profile production
-  ```
-
-##### Membangun untuk iOS:
-* **Build Simulator (Development)**:
-  Membangun file `.app` untuk dijalankan di Simulator iOS.
-  ```bash
-  npx eas build -p ios --profile development
-  ```
-* **Build IPA (Production / TestFlight)**:
-  Membangun file `.ipa` untuk rilis ke App Store (membutuhkan Apple Developer Account).
-  ```bash
-  npx eas build -p ios --profile production
-  ```
-
----
-
-#### B. Membangun Secara Lokal (Local Build)
-Jika Anda tidak ingin menggunakan server cloud Expo dan ingin membuild langsung di komputer Anda (membutuhkan JDK, Android SDK diatur di environment path untuk Android, atau Xcode untuk iOS):
-
-##### Membangun Android (Lokal):
-1. Pastikan variabel lingkungan `ANDROID_HOME` dan JDK 17 telah diatur.
-2. Jalankan perintah kompilasi lokal:
-   ```bash
-   npx expo run:android --variant release
-   ```
-   *Perintah ini akan menghasilkan file APK rilis di folder `android/app/build/outputs/apk/release/`.*
-
-##### Membangun iOS (Lokal - Hanya macOS):
-1. Pastikan Xcode dan CocoaPods sudah terinstal.
-2. Jalankan perintah kompilasi lokal:
-   ```bash
-   npx expo run:ios --configuration Release
+   npx expo export --platform android
    ```
 
 ---
 
-## 📦 Struktur Proyek
+## 📂 Struktur Direktori Proyek
+
 ```
-assets/        # Gambar aset (ikon, splash)
-src/           # Folder Source Code
-  components/  # Komponen UI Reusable
-  navigation/  # Konfigurasi Navigator Stack/Tab
-  screens/     # Halaman Aplikasi
-  services/    # Integrasi Database & Ekspor
-  utils/       # Fungsi pembantu & formatting
-App.js         # Entry Point Aplikasi
-app.json       # Konfigurasi Expo & App Metadata
-package.json   # Dependensi & Scripts
-README.md      # Dokumentasi Proyek
+gudang-app/
+├── assets/                 # Aset gambar, ikon, dan splash screen
+├── src/
+│   ├── components/         # Komponen form dasar & UI reusable
+│   │   └── ui/             # Micro UI Design System (Badge, Card, SearchBar, dll)
+│   ├── hooks/              # Custom React Hooks (useItems, usePurchaseOrders, dll)
+│   ├── navigation/         # Navigasi Root Stack & Bottom Tabs
+│   ├── repositories/       # Data Access Layer & SQLite Queries
+│   ├── screens/            # Layar Antarmuka Pengguna
+│   │   ├── Items/          # Inventori & Mutasi Stok
+│   │   ├── bookkeeping/    # Pembukuan & Arus Kas
+│   │   ├── dashboard/      # Dashboard, Metrik & Quick Menu
+│   │   └── purchaseOrders/ # Purchase Orders, Invoice PDF/PNG & Autocomplete
+│   ├── services/           # Database SQLite, Backup, File Sharing & Event Bus
+│   └── utils/              # Formatter mata uang, tanggal, dan sanitasi data
+├── app.json                # Konfigurasi Expo & Metadata Aplikasi (v1.8.0)
+├── package.json            # Daftar dependensi & scripts
+└── README.md               # Dokumentasi Lengkap Proyek
 ```
 
-## ⚠️ Troubleshooting
-- Emulator tidak terdeteksi → buka Android Studio > jalankan emulator > `npx expo start` > tekan `a`.
-- Cache/metro error → stop server, hapus folder `.expo`, lalu `npx expo start -c`.
-- Mismatch SDK → jalankan `npx expo-doctor` untuk cek versi.
+---
 
-Lisensi: MIT
+## 📱 Build Aplikasi (Android & iOS)
+
+### Menggunakan EAS Build (Cloud) - *Direkomendasikan*
+```bash
+# 1. Login ke akun Expo
+npx eas login
+
+# 2. Build APK untuk pengujian langsung di HP
+npx eas build -p android --profile development
+
+# 3. Build AAB untuk Google Play Store
+npx eas build -p android --profile production
+```
+
+### Build Lokal (Android APK)
+```bash
+npx expo run:android --variant release
+```
+
+---
+
+## 📄 Lisensi
+Hak Cipta © 2026 BukuToko / Gudang App. Didistribusikan di bawah lisensi MIT.

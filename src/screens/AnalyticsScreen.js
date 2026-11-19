@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -292,6 +293,7 @@ export default function AnalyticsScreen({ route, navigation }) {
           IFNULL(SUM(stock), 0) as total_stock,
           IFNULL(SUM(stock * price), 0) as total_value
         FROM items
+        WHERE (deleted_at IS NULL OR deleted_at = '')
         GROUP BY category
         ORDER BY total_value DESC
       `);
@@ -324,6 +326,8 @@ export default function AnalyticsScreen({ route, navigation }) {
         FROM stock_history h
         JOIN items i ON i.id = h.item_id
         WHERE h.type = 'OUT'
+          AND (h.deleted_at IS NULL OR h.deleted_at = '')
+          AND (i.deleted_at IS NULL OR i.deleted_at = '')
         GROUP BY h.item_id
         ORDER BY total_qty_out DESC
         LIMIT 5
@@ -400,6 +404,8 @@ export default function AnalyticsScreen({ route, navigation }) {
         FROM stock_history h
         JOIN items i ON i.id = h.item_id
         WHERE h.type = 'OUT'
+          AND (h.deleted_at IS NULL OR h.deleted_at = '')
+          AND (i.deleted_at IS NULL OR i.deleted_at = '')
         GROUP BY h.item_id
         ORDER BY total_profit DESC
         LIMIT 5
@@ -592,9 +598,11 @@ export default function AnalyticsScreen({ route, navigation }) {
     }
   }, [timeRange]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -1346,8 +1354,7 @@ export default function AnalyticsScreen({ route, navigation }) {
                       activeOpacity={0.7}
                       onPress={() =>
                         navigation.navigate("PurchaseOrderDetail", {
-                          orderId: item.id,
-                          onDone: loadData,
+                          id: item.id,
                         })
                       }
                       style={{
